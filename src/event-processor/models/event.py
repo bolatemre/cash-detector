@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, DateTime, Text, Boolean, Integer
 from sqlalchemy.sql import func
 from database import Base
+from config.settings import settings
 import uuid
 
 
@@ -8,6 +9,7 @@ class Event(Base):
     """Model for suspicious events detected by the AI system"""
     
     __tablename__ = "events"
+    __table_args__ = {'schema': settings.database_schema}
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     

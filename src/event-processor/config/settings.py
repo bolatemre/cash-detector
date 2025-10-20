@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     
     # Database Configuration
     database_url: str
+    database_schema: str = "event_processor"
     
     # Kafka Configuration
     kafka_bootstrap_servers: str
@@ -22,8 +23,10 @@ class Settings(BaseSettings):
     smtp_from_name: str = "Security System"
     
     # Notification Configuration
-    notification_recipients: str
     notification_channels: str = "email"  # Comma-separated: "email,sms"
+    
+    # Master Service Configuration
+    master_service_url: str = "http://master-service:8000"
     
     # MinIO Configuration (required)
     minio_endpoint: str
@@ -46,11 +49,6 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore"  # Ignore extra fields from .env
     )
-    
-    @property
-    def recipients_list(self) -> List[str]:
-        """Parse comma-separated email recipients"""
-        return [email.strip() for email in self.notification_recipients.split(",") if email.strip()]
     
     @property
     def channels_list(self) -> List[str]:

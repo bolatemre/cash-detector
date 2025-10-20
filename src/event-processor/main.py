@@ -14,6 +14,7 @@ from services.kafka_consumer import EventConsumer
 from services.notifications import NotificationService
 from services.event_processor import EventProcessor
 from services.minio_service import MinioService
+from services.master_service_client import MasterServiceClient
 from config.settings import settings
 from alembic.config import Config
 from alembic import command
@@ -66,9 +67,11 @@ def main():
         # Initialize services
         notification_service = NotificationService()
         minio_service = MinioService()
+        master_service_client = MasterServiceClient()
         consumer_instance = EventConsumer()
         
         logger.info("MinIO service initialized successfully")
+        logger.info("Master Service client initialized successfully")
         
         logger.info(f"Notification channels available: {notification_service.get_available_channels()}")
         logger.info(f"Notification channels enabled: {notification_service.get_enabled_channels()}")
@@ -78,7 +81,7 @@ def main():
             """Callback function to process each event"""
             db_session = SessionLocal()
             try:
-                processor = EventProcessor(db_session, notification_service, minio_service)
+                processor = EventProcessor(db_session, notification_service, minio_service, master_service_client)
                 processor.process_event(event_data)
             finally:
                 db_session.close()

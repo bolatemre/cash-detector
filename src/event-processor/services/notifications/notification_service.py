@@ -70,10 +70,8 @@ class NotificationService:
             channels = ['email']  # Default to email only
         
         if recipients is None:
-            # Use default recipients from settings
-            recipients = {
-                'email': settings.recipients_list,
-            }
+            logger.error("No recipients provided for notification")
+            return {channel: False for channel in channels}
         
         results = {}
         data_dict = event_data.to_dict()

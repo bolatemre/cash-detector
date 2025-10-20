@@ -125,8 +125,11 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      master-service:
+        condition: service_started
     environment:
       DATABASE_URL: postgresql://security_user:security_password@postgres:5432/security_system
+      DATABASE_SCHEMA: event_processor
       KAFKA_BOOTSTRAP_SERVERS: kafka:9093
       KAFKA_TOPIC: security-events
       KAFKA_GROUP_ID: event-processor-group
@@ -138,8 +141,9 @@ services:
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Security System}
       # Notification configuration
-      NOTIFICATION_RECIPIENTS: ${NOTIFICATION_RECIPIENTS}
       NOTIFICATION_CHANNELS: ${NOTIFICATION_CHANNELS:-email}
+      # Master Service configuration
+      MASTER_SERVICE_URL: http://master-service:8000
       # Email templates
       EMAIL_TEMPLATE_DIR: ${EMAIL_TEMPLATE_DIR:-templates}
       EMAIL_HTML_TEMPLATE: ${EMAIL_HTML_TEMPLATE:-email_suspicious_event.html}
@@ -155,6 +159,29 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./src/event-processor/templates:/app/templates:ro  # Mount email templates (read-only)
+
+  # Master Service
+  master-service:
+    build:
+      context: .
+      dockerfile: docker/master-service/Dockerfile
+    container_name: security-master-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://security_user:security_password@postgres:5432/security_system
+      DATABASE_SCHEMA: master_service
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      API_TITLE: "Master Service API"
+      API_VERSION: "1.0.0"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
 
 volumes:
   postgres_data:

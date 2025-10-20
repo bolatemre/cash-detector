@@ -5,6 +5,7 @@ from models.event import Event
 from models.schemas import EventMessage
 from services.notifications import NotificationService, NotificationData
 from services.minio_service import MinioService
+from services.master_service_client import MasterServiceClient
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -13,10 +14,11 @@ logger = logging.getLogger(__name__)
 class EventProcessor:
     """Processes events: saves to database and sends notifications"""
     
-    def __init__(self, db_session: Session, notification_service: NotificationService, minio_service: MinioService):
+    def __init__(self, db_session: Session, notification_service: NotificationService, minio_service: MinioService, master_service_client: MasterServiceClient = None):
         self.db_session = db_session
         self.notification_service = notification_service
         self.minio_service = minio_service
+        self.master_service_client = master_service_client or MasterServiceClient(settings.master_service_url)
     
     def process_event(self, event_data: dict) -> bool:
         """
@@ -101,6 +103,15 @@ class EventProcessor:
             bool: True if notification was sent successfully through at least one channel
         """
         try:
+            # Get email address for this camera from master-service
+            email = self.master_service_client.get_email_by_camera_id(event.camera_id)
+            
+            if not email:
+                logger.error(f"No email found for camera {event.camera_id}, skipping notification")
+                return False
+            
+            logger.info(f"Retrieved email for camera {event.camera_id}: {email}")
+            
             if not event.video_url:
                 logger.warning(f"Event {event.id} has no video URL, notification may be incomplete")
                 video_url = "Video not available"
@@ -116,13 +127,13 @@ class EventProcessor:
                 video_url=video_url
             )
             
-            # Send through configured channels from settings
+            # Send through configured channels with camera-specific email
             # Channels are configured via NOTIFICATION_CHANNELS env variable
             # Example: NOTIFICATION_CHANNELS=email,sms,telegram
             results = self.notification_service.send_notification(
                 event_data=notification_data,
                 channels=settings.channels_list,  # From .env configuration
-                recipients=None  # Uses default recipients from settings
+                recipients={'email': [email]}  # Use email from master-service
             )
             
             # Check if at least one channel succeeded
@@ -133,7 +144,7 @@ class EventProcessor:
                 event.notification_sent = True
                 event.notification_sent_at = datetime.utcnow()
                 self.db_session.commit()
-                logger.info(f"Notification sent for event {event.id} via channels: {[k for k, v in results.items() if v]}")
+                logger.info(f"Notification sent for event {event.id} to {email} via channels: {[k for k, v in results.items() if v]}")
             else:
                 logger.error(f"Failed to send notification for event {event.id} through any channel")
             
