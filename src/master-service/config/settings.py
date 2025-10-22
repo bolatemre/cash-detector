@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     api_title: str = "Master Service API"
     api_version: str = "1.0.0"
     
+    # Celery Configuration
+    celery_broker_url: str = "redis://redis:6379/0"
+    celery_result_backend: str = "redis://redis:6379/0"
+    
     # Application Configuration
     log_level: str = "INFO"
     

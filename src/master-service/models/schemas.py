@@ -36,3 +36,9 @@ class EmailResponse(BaseModel):
     camera_id: str
     email: str
 
+
+class CameraUrlResponse(BaseModel):
+    """Camera URL response"""
+    camera_id: str
+    camera_url: Optional[str] = None
+

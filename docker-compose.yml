@@ -169,6 +169,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "8000:8000"
     environment:
@@ -178,6 +180,43 @@ services:
       API_PORT: 8000
       API_TITLE: "Master Service API"
       API_VERSION: "1.0.0"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+  # Redis - Message Broker for Celery
+  redis:
+    image: redis:7-alpine
+    container_name: security-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Celery Worker - Video Stream Processing
+  celery-worker:
+    build:
+      context: .
+      dockerfile: docker/celery-worker/Dockerfile
+    container_name: security-celery-worker
+    depends_on:
+      redis:
+        condition: service_healthy
+      master-service:
+        condition: service_started
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      MASTER_SERVICE_URL: http://master-service:8000
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     restart: unless-stopped
     volumes:
@@ -187,4 +226,5 @@ volumes:
   postgres_data:
   kafka_data:
   minio_data:
+  redis_data:
 

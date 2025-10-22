@@ -21,12 +21,13 @@ def upgrade() -> None:
     # Create schema
     op.execute(f'CREATE SCHEMA IF NOT EXISTS {SCHEMA}')
     
-    # Create camera_emails table
+    # Create camera table with all columns
     op.create_table(
-        'camera_emails',
+        'camera',
         sa.Column('id', sa.Integer(), nullable=False, autoincrement=True),
         sa.Column('camera_id', sa.String(length=100), nullable=False),
         sa.Column('email', sa.String(length=255), nullable=False),
+        sa.Column('camera_url', sa.String(length=500), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()')),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint('id'),
@@ -34,17 +35,17 @@ def upgrade() -> None:
     )
     
     # Create indexes
-    op.create_index('ix_camera_emails_id', 'camera_emails', ['id'], unique=False, schema=SCHEMA)
-    op.create_index('ix_camera_emails_camera_id', 'camera_emails', ['camera_id'], unique=True, schema=SCHEMA)
+    op.create_index('ix_camera_pk', 'camera', ['id'], unique=False, schema=SCHEMA)
+    op.create_index('ix_camera_id', 'camera', ['camera_id'], unique=True, schema=SCHEMA)
 
 
 def downgrade() -> None:
     # Drop indexes
-    op.drop_index('ix_camera_emails_camera_id', table_name='camera_emails', schema=SCHEMA)
-    op.drop_index('ix_camera_emails_id', table_name='camera_emails', schema=SCHEMA)
+    op.drop_index('ix_camera_id', table_name='camera', schema=SCHEMA)
+    op.drop_index('ix_camera_pk', table_name='camera', schema=SCHEMA)
     
     # Drop table
-    op.drop_table('camera_emails', schema=SCHEMA)
+    op.drop_table('camera', schema=SCHEMA)
     
     # Drop schema
     op.execute(f'DROP SCHEMA IF EXISTS {SCHEMA}')

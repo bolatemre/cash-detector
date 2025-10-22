@@ -7,7 +7,7 @@ from config.settings import settings
 class Camera(Base):
     """Model for camera to email mapping"""
     
-    __tablename__ = "camera_emails"
+    __tablename__ = "camera"
     __table_args__ = {'schema': settings.database_schema}
     
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)

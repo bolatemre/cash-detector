@@ -30,6 +30,21 @@ logs-event-processor:
 logs-master:
 	docker compose logs -f master-service
 
+logs-celery:
+	docker compose logs -f celery-worker
+
+celery-up:
+	docker compose up -d celery-worker
+
+celery-down:
+	docker compose stop celery-worker
+
+celery-restart:
+	docker compose restart celery-worker
+
+redis-cli:
+	docker compose exec redis redis-cli
+
 docker-rebuild:
 	docker compose down
 	docker compose build --no-cache
