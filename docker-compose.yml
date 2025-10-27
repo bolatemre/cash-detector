@@ -94,7 +94,8 @@ services:
     entrypoint: >
       /bin/sh -c "
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic security-events --partitions 3 --replication-factor 1;
-      echo 'Kafka topic created successfully';
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic uploaded-videos --partitions 3 --replication-factor 1;
+      echo 'Kafka topics created successfully';
       exit 0;
       "
 
@@ -213,10 +214,30 @@ services:
         condition: service_healthy
       master-service:
         condition: service_started
+      minio:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CELERY_WORKER_CONCURRENCY: ${CELERY_WORKER_CONCURRENCY:-4}
+      # Task Retry Configuration
+      # CELERY_TASK_MAX_RETRIES: Unlimited retries by default (set to number to limit)
+      CELERY_TASK_MAX_RETRIES: ${CELERY_TASK_MAX_RETRIES:-}
+      CELERY_TASK_RETRY_BACKOFF: ${CELERY_TASK_RETRY_BACKOFF:-60}
+      CELERY_TASK_RETRY_BACKOFF_MAX: ${CELERY_TASK_RETRY_BACKOFF_MAX:-3600}
+      CELERY_TASK_RETRY_JITTER: ${CELERY_TASK_RETRY_JITTER:-true}
       MASTER_SERVICE_URL: http://master-service:8000
+      # Kafka configuration
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9093
+      KAFKA_UPLOADED_VIDEOS_TOPIC: uploaded-videos
+      # MinIO configuration
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
+      MINIO_BUCKET: security-videos
+      MINIO_SECURE: "false"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     restart: unless-stopped
     volumes:

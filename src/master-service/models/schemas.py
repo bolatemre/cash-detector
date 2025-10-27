@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, HttpUrl
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 
 class CameraBase(BaseModel):
@@ -41,4 +41,42 @@ class CameraUrlResponse(BaseModel):
     """Camera URL response"""
     camera_id: str
     camera_url: Optional[str] = None
+
+
+# Task-related schemas
+class TaskInfo(BaseModel):
+    """Information about a single task"""
+    task_id: str
+    name: Optional[str] = None
+    args: Optional[List[Any]] = None
+    kwargs: Optional[Dict[str, Any]] = None
+    worker: Optional[str] = None
+    time_start: Optional[float] = None
+
+
+class CameraStreamTask(BaseModel):
+    """Information about camera stream task"""
+    task_id: str
+    camera_id: str
+
+
+class TaskStatusResponse(BaseModel):
+    """Response for task status query"""
+    task_id: str
+    status: str  # PENDING, STARTED, SUCCESS, FAILURE, RETRY, REVOKED
+    result: Optional[Any] = None
+    traceback: Optional[str] = None
+
+
+class ActiveTasksResponse(BaseModel):
+    """Response containing active camera stream tasks"""
+    active_tasks: List[CameraStreamTask]
+    total_count: int
+
+
+class TaskStopResponse(BaseModel):
+    """Response for stopping a task"""
+    status: str
+    task_id: str
+    message: str
 
