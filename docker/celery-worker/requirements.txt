@@ -1,0 +1,16 @@
+celery[redis]==5.3.4
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+requests==2.31.0
+
+# Camera stream processing dependencies
+opencv-python-headless==4.8.1.78
+numpy==1.26.2
+mediapipe==0.10.9
+confluent-kafka==2.3.0
+minio==7.2.0
+
+

@@ -1,0 +1,287 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: security-postgres
+    environment:
+      POSTGRES_DB: security_system
+      POSTGRES_USER: security_user
+      POSTGRES_PASSWORD: security_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U security_user -d security_system"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Kafka (KRaft mode - without Zookeeper)
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: security-kafka
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094,PLAINTEXT_INTERNAL://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9094
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: security-kafka-cluster
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # MinIO Object Storage (S3-compatible)
+  minio:
+    image: minio/minio:latest
+    container_name: security-minio
+    ports:
+      - "9000:9000"      # API port
+      - "9001:9001"      # Console UI port
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # MinIO Client for bucket initialization
+  minio-init:
+    image: minio/mc:latest
+    container_name: security-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin123};
+      mc mb myminio/security-videos --ignore-existing;
+      mc anonymous set download myminio/security-videos;
+      echo 'MinIO bucket initialized successfully';
+      exit 0;
+      "
+
+  # Kafka Topic Initialization
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: security-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic security-events --partitions 3 --replication-factor 1;
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic uploaded-videos --partitions 3 --replication-factor 1;
+      echo 'Kafka topics created successfully';
+      exit 0;
+      "
+
+  # Kafka UI (Web interface for Kafka)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: security-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: security-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
+      DYNAMIC_CONFIG_ENABLED: "true"
+      AUTH_TYPE: "DISABLED"
+    restart: unless-stopped
+
+  # Event Processor Service
+  event-processor:
+    build:
+      context: .
+      dockerfile: docker/event-processor/Dockerfile
+    container_name: security-event-processor
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      master-service:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://security_user:security_password@postgres:5432/security_system
+      DATABASE_SCHEMA: event_processor
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9093
+      KAFKA_TOPIC: security-events
+      KAFKA_GROUP_ID: event-processor-group
+      # Email configuration - set these in .env file
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Security System}
+      # Notification configuration
+      NOTIFICATION_CHANNELS: ${NOTIFICATION_CHANNELS:-email}
+      # Master Service configuration
+      MASTER_SERVICE_URL: http://master-service:8000
+      # Email templates
+      EMAIL_TEMPLATE_DIR: ${EMAIL_TEMPLATE_DIR:-templates}
+      EMAIL_HTML_TEMPLATE: ${EMAIL_HTML_TEMPLATE:-email_suspicious_event.html}
+      # MinIO configuration
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      MINIO_BUCKET: security-videos
+      MINIO_SUSPICIOUS_FOLDER: ${MINIO_SUSPICIOUS_FOLDER:-suspicious}
+      MINIO_SECURE: "false"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+      - ./src/event-processor/templates:/app/templates:ro  # Mount email templates (read-only)
+
+  # Master Service
+  master-service:
+    build:
+      context: .
+      dockerfile: docker/master-service/Dockerfile
+    container_name: security-master-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://security_user:security_password@postgres:5432/security_system
+      DATABASE_SCHEMA: master_service
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      API_TITLE: "Master Service API"
+      API_VERSION: "1.0.0"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+  # Redis - Message Broker for Celery
+  redis:
+    image: redis:7-alpine
+    container_name: security-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Celery Worker - Video Stream Processing
+  celery-worker:
+    build:
+      context: .
+      dockerfile: docker/celery-worker/Dockerfile
+    container_name: security-celery-worker
+    depends_on:
+      redis:
+        condition: service_healthy
+      master-service:
+        condition: service_started
+      minio:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CELERY_WORKER_CONCURRENCY: ${CELERY_WORKER_CONCURRENCY:-4}
+      # Task Retry Configuration
+      # CELERY_TASK_MAX_RETRIES: Unlimited retries by default (set to number to limit)
+      CELERY_TASK_MAX_RETRIES: ${CELERY_TASK_MAX_RETRIES:-}
+      CELERY_TASK_RETRY_BACKOFF: ${CELERY_TASK_RETRY_BACKOFF:-300}
+      CELERY_TASK_RETRY_BACKOFF_MAX: ${CELERY_TASK_RETRY_BACKOFF_MAX:-300}
+      CELERY_TASK_RETRY_JITTER: ${CELERY_TASK_RETRY_JITTER:-false}
+      MASTER_SERVICE_URL: http://master-service:8000
+      # Kafka configuration
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9093
+      KAFKA_UPLOADED_VIDEOS_TOPIC: uploaded-videos
+      # MinIO configuration
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
+      MINIO_BUCKET: security-videos
+      MINIO_SECURE: "false"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+#      - ./videos:/app/videos
+
+  # Classification Service - Video Classification
+  classification-service:
+    build:
+      context: .
+      dockerfile: docker/classification-service/Dockerfile
+    container_name: security-classification-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      # Kafka configuration
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9093
+      KAFKA_TOPIC: uploaded-videos
+      KAFKA_GROUP_ID: classification-service-group
+      KAFKA_SECURITY_EVENTS_TOPIC: security-events
+      # MinIO configuration (for downloading videos)
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
+      MINIO_BUCKET: security-videos
+      MINIO_SECURE: "false"
+      # Local storage for downloaded videos
+      TEMP_VIDEO_DIR: /tmp/videos
+      # Service configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # TODO: Add classification model configuration
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+      - /tmp/videos:/tmp/videos
+      # TODO: Mount model directory when implementing classification
+      # - ./models:/app/models:ro
+
+volumes:
+  postgres_data:
+  kafka_data:
+  minio_data:
+  redis_data:
+
