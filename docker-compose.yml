@@ -225,9 +225,9 @@ services:
       # Task Retry Configuration
       # CELERY_TASK_MAX_RETRIES: Unlimited retries by default (set to number to limit)
       CELERY_TASK_MAX_RETRIES: ${CELERY_TASK_MAX_RETRIES:-}
-      CELERY_TASK_RETRY_BACKOFF: ${CELERY_TASK_RETRY_BACKOFF:-60}
-      CELERY_TASK_RETRY_BACKOFF_MAX: ${CELERY_TASK_RETRY_BACKOFF_MAX:-3600}
-      CELERY_TASK_RETRY_JITTER: ${CELERY_TASK_RETRY_JITTER:-true}
+      CELERY_TASK_RETRY_BACKOFF: ${CELERY_TASK_RETRY_BACKOFF:-300}
+      CELERY_TASK_RETRY_BACKOFF_MAX: ${CELERY_TASK_RETRY_BACKOFF_MAX:-300}
+      CELERY_TASK_RETRY_JITTER: ${CELERY_TASK_RETRY_JITTER:-false}
       MASTER_SERVICE_URL: http://master-service:8000
       # Kafka configuration
       KAFKA_BOOTSTRAP_SERVERS: kafka:9093
@@ -242,6 +242,42 @@ services:
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
+#      - ./videos:/app/videos
+
+  # Classification Service - Video Classification
+  classification-service:
+    build:
+      context: .
+      dockerfile: docker/classification-service/Dockerfile
+    container_name: security-classification-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      # Kafka configuration
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9093
+      KAFKA_TOPIC: uploaded-videos
+      KAFKA_GROUP_ID: classification-service-group
+      KAFKA_SECURITY_EVENTS_TOPIC: security-events
+      # MinIO configuration (for downloading videos)
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
+      MINIO_BUCKET: security-videos
+      MINIO_SECURE: "false"
+      # Local storage for downloaded videos
+      TEMP_VIDEO_DIR: /tmp/videos
+      # Service configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # TODO: Add classification model configuration
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+      - /tmp/videos:/tmp/videos
+      # TODO: Mount model directory when implementing classification
+      # - ./models:/app/models:ro
 
 volumes:
   postgres_data:
