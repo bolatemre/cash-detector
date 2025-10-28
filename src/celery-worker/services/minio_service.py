@@ -20,7 +20,7 @@ def get_minio_client():
         endpoint=os.getenv('MINIO_ENDPOINT'),
         access_key=os.getenv('MINIO_ACCESS_KEY'),
         secret_key=os.getenv('MINIO_SECRET_KEY'),
-        secure=False  # Use True for HTTPS
+        secure=os.getenv('MINIO_SECURE').lower() == "true"
     )
     return client
 
@@ -56,7 +56,7 @@ def upload_video_to_minio(local_file_path, camera_id):
             bucket_name=bucket_name,
             object_name=object_name,
             file_path=local_file_path,
-            content_type='video/mp4'
+            content_type='video/x-msvideo'
         )
         
         logger.info(f"Successfully uploaded video to MinIO: {object_name}")

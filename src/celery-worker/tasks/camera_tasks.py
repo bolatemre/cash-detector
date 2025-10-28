@@ -16,7 +16,6 @@ Usage:
 
 import logging
 import requests
-import cv2
 from datetime import datetime
 from celery_app import celery_app
 from config.settings import settings
@@ -65,8 +64,11 @@ def start_process_camera_stream(self, camera_id: str):
         
         data = response.json()
         camera_url = data.get('camera_url')
+        expected_fps = data.get('expected_fps')
+        record_fps = data.get('record_fps')
         
         logger.info(f"Camera URL for {camera_id}: {camera_url}")
+        logger.info(f"Camera FPS settings - Expected: {expected_fps}, Record: {record_fps}")
         
         if not camera_url:
             error_msg = f"Camera {camera_id} has no URL configured"
@@ -74,16 +76,7 @@ def start_process_camera_stream(self, camera_id: str):
             # Don't retry - configuration issue
             raise Exception(error_msg)
         
-        # Connect to camera stream and start processing
-        logger.info(f"Connecting to camera stream: {camera_url}")
-        cap = cv2.VideoCapture(camera_url)
-        
-        if not cap.isOpened():
-            error_msg = f"Failed to open camera stream: {camera_url}"
-            logger.error(error_msg)
-            # Retry - might be temporary network issue
-            raise ConnectionError(error_msg)
-        
+        # Start processing - target_recording will create the video capture internally
         try:
             # Callback to check if task was revoked
             def should_stop():
@@ -100,7 +93,14 @@ def start_process_camera_stream(self, camera_id: str):
             logger.info(f"Task ID: {self.request.id} - Use celery.control.revoke('{self.request.id}', terminate=True) to stop")
             
             # This will run indefinitely until stopped or stream ends
-            target_recording(cap, camera_id=camera_id, should_stop_callback=should_stop)
+            target_recording(
+                camera_url, 
+                camera_id=camera_id, 
+                should_stop_callback=should_stop, 
+                max_failed_reads=settings.camera_max_failed_reads,
+                expected_fps=expected_fps,
+                record_fps=record_fps
+            )
             
             # If we reach here, it means the stream ended naturally or was stopped
             logger.info(f"Target recording finished for camera {camera_id}")
@@ -124,10 +124,6 @@ def start_process_camera_stream(self, camera_id: str):
             logger.error(error_msg, exc_info=True)
             # Re-raise to let Celery handle it
             raise
-        finally:
-            logger.info(f"Releasing camera resources for {camera_id}")
-            if cap.isOpened():
-                cap.release()
         
     except requests.exceptions.RequestException as e:
         error_msg = f"Error connecting to master-service: {e}"

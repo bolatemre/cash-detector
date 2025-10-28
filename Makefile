@@ -12,7 +12,6 @@ docker-down-volumes:
 
 docker-restart:
 	@echo "⚠️  WARNING: This will remove all containers, volumes and data!"
-	@echo "Press Ctrl+C to cancel, or Enter to continue..."
 	@echo "Stopping containers..."
 	docker compose down -v
 	@echo "Removing volumes..."

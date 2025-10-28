@@ -27,5 +27,10 @@ celery_app.conf.update(
     worker_max_tasks_per_child=50,  # Restart worker after 50 tasks to prevent memory leaks
     task_acks_late=True,  # Acknowledge task after completion, not before
     task_reject_on_worker_lost=True,  # Reject task if worker dies
+    worker_disable_rate_limits=True,
+    task_routes={
+        'tasks.start_process_camera_stream': {'queue': 'camera_streams'},
+        'tasks.stop_process_camera_stream': {'queue': 'camera_streams'},
+    },
 )
 

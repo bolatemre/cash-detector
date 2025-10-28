@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # Application Configuration
     log_level: str = "INFO"
     
+    # Camera Processing Configuration
+    camera_max_failed_reads: int = 30  # Maximum consecutive failed frame reads before stopping
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

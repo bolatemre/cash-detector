@@ -5,6 +5,7 @@ from typing import Dict, Any
 from datetime import datetime
 from services.kafka_producer import send_classification_event
 from services.minio_service import MinioService
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -100,9 +101,8 @@ class ClassificationService:
             bool: True if event was sent successfully
         """
         try:
-            # Construct full video URL (assuming MinIO is accessible)
-            # TODO: Make this configurable based on your MinIO setup
-            video_url = f"http://minio:9000/{bucket_name}/{video_path}"
+            # Construct full video URL using configurable MinIO URL
+            video_url = f"{settings.minio_endpoint}/{bucket_name}/{video_path}"
             
             # Send event to Kafka
             success = send_classification_event(

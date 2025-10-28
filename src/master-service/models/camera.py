@@ -14,6 +14,8 @@ class Camera(Base):
     camera_id = Column(String(100), unique=True, nullable=False, index=True)
     email = Column(String(255), nullable=False)
     camera_url = Column(String(500), nullable=True)  # Camera stream/access URL
+    expected_fps = Column(Integer, nullable=True, default=25)  # Expected FPS for processing
+    record_fps = Column(Integer, nullable=True, default=20)  # FPS for video recording
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())

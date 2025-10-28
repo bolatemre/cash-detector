@@ -221,7 +221,7 @@ services:
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
-      CELERY_WORKER_CONCURRENCY: ${CELERY_WORKER_CONCURRENCY:-4}
+      CELERY_WORKER_CONCURRENCY: ${CELERY_WORKER_CONCURRENCY:-8}
       # Task Retry Configuration
       # CELERY_TASK_MAX_RETRIES: Unlimited retries by default (set to number to limit)
       CELERY_TASK_MAX_RETRIES: ${CELERY_TASK_MAX_RETRIES:-}
