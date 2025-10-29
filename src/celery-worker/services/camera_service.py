@@ -83,13 +83,13 @@ def target_recording(camera_url, camera_id=None, should_stop_callback=None, max_
             current_time = time.time()
             elapsed_time = current_time - last_log_time
             
-            # Log FPS every second
-            if elapsed_time >= 1.0:
+            # Log FPS at configurable interval
+            if elapsed_time >= settings.camera_fps_log_interval:
                 fps = frame_count / elapsed_time
-                logger.info(f"Camera {camera_id}: Processing at {fps:.2f} FPS (processed {frame_count} frames in {elapsed_time:.2f}s)")
+                logger.debug(f"Camera {camera_id}: Processing at {fps:.2f} FPS (processed {frame_count} frames in {elapsed_time:.2f}s)")
                 
-                # Log warning if FPS is very low (possible worker blocking)
-                if fps < 1.0 and frame_count > 0:
+                # Log warning if FPS is below threshold (possible worker blocking)
+                if fps < settings.camera_fps_warning_threshold and frame_count > 0:
                     logger.warning(f"Camera {camera_id}: Very low FPS ({fps:.2f}) - possible worker blocking or network issues")
                 
                 frame_count = 0
