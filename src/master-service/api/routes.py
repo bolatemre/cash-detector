@@ -56,7 +56,12 @@ async def get_camera_url_by_id(camera_id: str, db: Session = Depends(get_db)):
             detail=f"Camera not found: {camera_id}"
         )
     
-    return CameraUrlResponse(camera_id=camera.camera_id, camera_url=camera.camera_url)
+    return CameraUrlResponse(
+        camera_id=camera.camera_id, 
+        camera_url=camera.camera_url,
+        expected_fps=camera.expected_fps,
+        record_fps=camera.record_fps
+    )
 
 
 @router.post("/camera/{camera_id}/start-stream", status_code=status.HTTP_202_ACCEPTED)

@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # Application Configuration
     log_level: str = "INFO"
     
+    # Camera Processing Configuration
+    camera_max_failed_reads: int = 30  # Maximum consecutive failed frame reads before stopping
+    camera_fps_log_interval: float = 1.0  # Interval in seconds for FPS logging
+    camera_fps_warning_threshold: float = 1.0  # FPS threshold below which warning is logged
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

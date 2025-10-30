@@ -8,6 +8,8 @@ class CameraBase(BaseModel):
     camera_id: str
     email: EmailStr
     camera_url: Optional[str] = None
+    expected_fps: Optional[int] = 25
+    record_fps: Optional[int] = 20
 
 
 class CameraCreate(CameraBase):
@@ -19,6 +21,8 @@ class CameraUpdate(BaseModel):
     """Schema for updating a camera email mapping"""
     email: Optional[EmailStr] = None
     camera_url: Optional[str] = None
+    expected_fps: Optional[int] = None
+    record_fps: Optional[int] = None
 
 
 class CameraResponse(CameraBase):
@@ -38,9 +42,11 @@ class EmailResponse(BaseModel):
 
 
 class CameraUrlResponse(BaseModel):
-    """Camera URL response"""
+    """Camera URL response with FPS settings"""
     camera_id: str
     camera_url: Optional[str] = None
+    expected_fps: Optional[int] = 25
+    record_fps: Optional[int] = 20
 
 
 # Task-related schemas
