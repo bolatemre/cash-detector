@@ -145,6 +145,11 @@ services:
       NOTIFICATION_CHANNELS: ${NOTIFICATION_CHANNELS:-email}
       # Master Service configuration
       MASTER_SERVICE_URL: http://master-service:8000
+      # Keycloak configuration (required - for service-to-service auth)
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8080}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-security-realm}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-event-processor}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_EVENT_PROCESSOR_SECRET:-event-processor-secret}
       # Email templates
       EMAIL_TEMPLATE_DIR: ${EMAIL_TEMPLATE_DIR:-templates}
       EMAIL_HTML_TEMPLATE: ${EMAIL_HTML_TEMPLATE:-email_suspicious_event.html}
@@ -172,6 +177,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      keycloak:
+        condition: service_healthy
     ports:
       - "8000:8000"
     environment:
@@ -183,6 +190,12 @@ services:
       API_VERSION: "1.0.0"
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # Keycloak JWT validation for incoming requests (used by app security)
+      KEYCLOAK_SERVER_URL: ${KEYCLOAK_URL:-http://keycloak:8080}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-security-realm}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-master-service}
+      KEYCLOAK_ALGORITHMS: ${KEYCLOAK_ALGORITHMS:-RS256}
+      # Keycloak configuration (required)
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     restart: unless-stopped
     volumes:
@@ -229,6 +242,11 @@ services:
       CELERY_TASK_RETRY_BACKOFF_MAX: ${CELERY_TASK_RETRY_BACKOFF_MAX:-300}
       CELERY_TASK_RETRY_JITTER: ${CELERY_TASK_RETRY_JITTER:-false}
       MASTER_SERVICE_URL: http://master-service:8000
+      # Keycloak configuration (required - for service-to-service auth)
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8080}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-security-realm}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-celery-worker}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CELERY_WORKER_SECRET:-celery-worker-secret}
       # Kafka configuration
       KAFKA_BOOTSTRAP_SERVERS: kafka:9093
       KAFKA_UPLOADED_VIDEOS_TOPIC: uploaded-videos
@@ -278,6 +296,44 @@ services:
       - /tmp/videos:/tmp/videos
       # TODO: Mount model directory when implementing classification
       # - ./models:/app/models:ro
+
+  # Keycloak - Identity and Access Management
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    container_name: security-keycloak
+    command: start-dev --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/security_system
+      KC_DB_SCHEMA: keycloak
+      KC_DB_USERNAME: security_user
+      KC_DB_PASSWORD: security_password
+      # KC_HOSTNAME: keycloak
+      # KC_HOSTNAME_PORT: 8080
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: true
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      # Override client secrets with environment variables if provided
+      KEYCLOAK_MASTER_SERVICE_SECRET: ${KEYCLOAK_MASTER_SERVICE_SECRET:-master-service-secret}
+      KEYCLOAK_CELERY_WORKER_SECRET: ${KEYCLOAK_CELERY_WORKER_SECRET:-celery-worker-secret}
+      KEYCLOAK_EVENT_PROCESSOR_SECRET: ${KEYCLOAK_EVENT_PROCESSOR_SECRET:-event-processor-secret}
+    ports:
+      - "8088:8080"
+      - "9088:9000"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e \"GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3 && head -1 <&3 | grep \"200\""]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
   postgres_data:

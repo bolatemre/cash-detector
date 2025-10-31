@@ -20,6 +20,8 @@ from datetime import datetime
 from celery_app import celery_app
 from config.settings import settings
 from services.camera_service import target_recording, CameraConnectionLostError
+from services.utils import mask_camera_url
+from services.keycloak_auth import get_auth_headers
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +50,9 @@ def start_process_camera_stream(self, camera_id: str):
         api_url = f"{settings.master_service_url}/api/v1/camera/{camera_id}/url"
         logger.info(f"Fetching camera URL from: {api_url}")
         
-        response = requests.get(api_url, timeout=5)
+        # Add Keycloak authentication headers if configured
+        headers = get_auth_headers()
+        response = requests.get(api_url, headers=headers, timeout=5)
         
         if response.status_code == 404:
             error_msg = f"Camera {camera_id} not found in master-service"
@@ -67,7 +71,7 @@ def start_process_camera_stream(self, camera_id: str):
         expected_fps = data.get('expected_fps')
         record_fps = data.get('record_fps')
         
-        logger.info(f"Camera URL for {camera_id}: {camera_url}")
+        logger.info(f"Camera URL for {camera_id}: {mask_camera_url(camera_url)}")
         logger.info(f"Camera FPS settings - Expected: {expected_fps}, Record: {record_fps}")
         
         if not camera_url:
@@ -107,7 +111,7 @@ def start_process_camera_stream(self, camera_id: str):
             return {
                 'status': 'completed',
                 'camera_id': camera_id,
-                'camera_url': camera_url,
+                'camera_url': mask_camera_url(camera_url),
                 'message': 'Camera stream processing completed (stream ended or stopped)',
                 'timestamp': datetime.utcnow().isoformat()
             }

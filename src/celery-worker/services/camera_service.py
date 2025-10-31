@@ -6,6 +6,7 @@ import os
 import threading
 
 from .minio_service import upload_video_to_minio
+from .utils import mask_camera_url
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def target_recording(camera_url, camera_id=None, should_stop_callback=None, max_
     last_log_time = start_time
     
     # Create video capture object with optimized settings for streaming
-    logger.info(f"Connecting to camera stream: {camera_url}")
+    logger.info(f"Connecting to camera stream: {mask_camera_url(camera_url)}")
     cap = cv2.VideoCapture(camera_url, cv2.CAP_FFMPEG)
     
     # Configure video capture for RTSP/network streams
@@ -57,7 +58,7 @@ def target_recording(camera_url, camera_id=None, should_stop_callback=None, max_
     cap.set(cv2.CAP_PROP_FPS, expected_fps)  # Set expected FPS from camera settings
     
     if not cap.isOpened():
-        error_msg = f"Failed to open camera stream: {camera_url}"
+        error_msg = f"Failed to open camera stream: {mask_camera_url(camera_url)}"
         logger.error(error_msg)
         raise ConnectionError(error_msg)
     

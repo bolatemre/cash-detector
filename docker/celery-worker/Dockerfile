@@ -28,6 +28,6 @@ RUN mkdir -p /app/output/trigger/test
 
 # Start Celery worker
 # Note: Concurrency is configured via CELERY_WORKER_CONCURRENCY environment variable
-CMD celery -A celery_app worker --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-4}
+CMD celery -A celery_app worker --loglevel=${LOG_LEVEL:-INFO} --concurrency=${CELERY_WORKER_CONCURRENCY:-4}
 
 

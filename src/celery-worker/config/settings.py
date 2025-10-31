@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     # Master Service Configuration
     master_service_url: str = "http://master-service:8000"
     
+    # Keycloak Configuration (required)
+    keycloak_url: str  # e.g., http://keycloak:8080
+    keycloak_realm: str  # e.g., security-realm
+    keycloak_client_id: str  # e.g., security-service
+    keycloak_client_secret: str  # Client secret for service-to-service auth
+    
     # Kafka Configuration
     kafka_bootstrap_servers: str = "kafka:9093"
     kafka_uploaded_videos_topic: str = "uploaded-videos"

@@ -9,6 +9,7 @@ import logging
 import requests
 from typing import Optional
 from config.settings import settings
+from services.keycloak_auth import get_auth_headers
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,9 @@ class MasterServiceClient:
             url = f"{self.base_url}{self.api_prefix}/camera/{camera_id}/email"
             logger.debug(f"Fetching email for camera_id: {camera_id} from {url}")
             
-            response = requests.get(url, timeout=5)
+            # Add Keycloak authentication headers if configured
+            headers = get_auth_headers()
+            response = requests.get(url, headers=headers, timeout=5)
             
             if response.status_code == 200:
                 data = response.json()
@@ -70,7 +73,9 @@ class MasterServiceClient:
         """
         try:
             url = f"{self.base_url}{self.api_prefix}/health"
-            response = requests.get(url, timeout=2)
+            # Add Keycloak authentication headers if configured
+            headers = get_auth_headers()
+            response = requests.get(url, headers=headers, timeout=2)
             return response.status_code == 200
         except Exception as e:
             logger.error(f"Master Service health check failed: {e}")
