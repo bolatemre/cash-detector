@@ -56,7 +56,7 @@ def upload_video_to_minio(local_file_path, camera_id):
             bucket_name=bucket_name,
             object_name=object_name,
             file_path=local_file_path,
-            content_type='video/x-msvideo'
+            content_type='video/mp4'
         )
         
         logger.info(f"Successfully uploaded video to MinIO: {object_name}")
