@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     # Master Service Configuration
     master_service_url: str = "http://master-service:8000"
     
+    # Keycloak Configuration (required)
+    keycloak_url: str  # e.g., http://keycloak:8080
+    keycloak_realm: str  # e.g., security-realm
+    keycloak_client_id: str  # e.g., security-service
+    keycloak_client_secret: str  # Client secret for service-to-service auth
+    
     # Kafka Configuration
     kafka_bootstrap_servers: str = "kafka:9093"
     kafka_uploaded_videos_topic: str = "uploaded-videos"
@@ -39,6 +45,7 @@ class Settings(BaseSettings):
     camera_max_failed_reads: int = 30  # Maximum consecutive failed frame reads before stopping
     camera_fps_log_interval: float = 1.0  # Interval in seconds for FPS logging
     camera_fps_warning_threshold: float = 1.0  # FPS threshold below which warning is logged
+    camera_no_hand_timeout: float = 5.0  # Seconds to wait after hands disappear before stopping recording
     
     model_config = SettingsConfigDict(
         env_file=".env",

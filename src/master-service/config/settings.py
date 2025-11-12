@@ -20,6 +20,16 @@ class Settings(BaseSettings):
     
     # Application Configuration
     log_level: str = "INFO"
+
+    # Keycloak / Auth Configuration
+    keycloak_server_url: str
+    keycloak_realm: str
+    keycloak_client_id: str
+    keycloak_algorithms: str = "RS256"
+    # Optional direct JWKS configuration
+    keycloak_jwks_url: str | None = None
+    jwks_cache_ttl_seconds: int = 300
+    jwks_http_timeout_seconds: float = 5.0
     
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -4,8 +4,10 @@ import logging
 import mediapipe as mp
 import os
 import threading
+import imageio
 
 from .minio_service import upload_video_to_minio
+from .utils import mask_camera_url
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -18,22 +20,20 @@ class CameraConnectionLostError(Exception):
     """Raised when camera connection is lost (too many consecutive failed frame reads)"""
     pass
 
-def target_recording(camera_url, camera_id=None, should_stop_callback=None, max_failed_reads=None, expected_fps=25, record_fps=20):
+def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20):
     """
-    Function that take video as input. When hands are detected, video recording is started until hands disappear + 5 seconds.
+    Function that take video as input. When hands are detected, video recording is started until hands disappear + timeout seconds.
     Short videos with detected object are stored in defined directory.
     
     Args:
         camera_url: URL or path to the camera stream
         camera_id: Optional camera identifier for logging
-        should_stop_callback: Optional callback function that returns True if processing should stop
-        max_failed_reads: Maximum number of consecutive failed frame reads before stopping (uses settings.camera_max_failed_reads if None)
         expected_fps: Expected FPS for processing
         record_fps: FPS for video recording
     """
-    # Use configured max_failed_reads or default value
-    if max_failed_reads is None:
-        max_failed_reads = settings.camera_max_failed_reads
+
+    max_failed_reads = settings.camera_max_failed_reads
+    no_hand_timeout = settings.camera_no_hand_timeout
     
     # Configure MediaPipe for better performance
     hands = mp_hands.Hands(max_num_hands=2)
@@ -49,7 +49,7 @@ def target_recording(camera_url, camera_id=None, should_stop_callback=None, max_
     last_log_time = start_time
     
     # Create video capture object with optimized settings for streaming
-    logger.info(f"Connecting to camera stream: {camera_url}")
+    logger.info(f"Connecting to camera stream: {mask_camera_url(camera_url)}")
     cap = cv2.VideoCapture(camera_url, cv2.CAP_FFMPEG)
     
     # Configure video capture for RTSP/network streams
@@ -57,7 +57,7 @@ def target_recording(camera_url, camera_id=None, should_stop_callback=None, max_
     cap.set(cv2.CAP_PROP_FPS, expected_fps)  # Set expected FPS from camera settings
     
     if not cap.isOpened():
-        error_msg = f"Failed to open camera stream: {camera_url}"
+        error_msg = f"Failed to open camera stream: {mask_camera_url(camera_url)}"
         logger.error(error_msg)
         raise ConnectionError(error_msg)
     
@@ -103,19 +103,19 @@ def target_recording(camera_url, camera_id=None, should_stop_callback=None, max_
                 if not recording:
                     output_dir = os.getenv('CAMERA_OUTPUT_DIR', '/app/output/trigger/test')
                     os.makedirs(output_dir, exist_ok=True)
-                    current_video_file = f"{output_dir}/recording_{camera_id}_{int(time.time())}.avi"
-                    out = cv2.VideoWriter(current_video_file, cv2.VideoWriter_fourcc(*'XVID'), record_fps, (frame.shape[1], frame.shape[0]))
+                    current_video_file = f"{output_dir}/recording_{camera_id}_{int(time.time())}.mp4"
+                    out = imageio.get_writer(current_video_file, fps=record_fps, codec='libx264', quality=10)
                     recording = True
                     logger.info(f"Recording started for camera {camera_id}: {current_video_file}")
-                no_hand_start = None
             else:
                 if recording:
                     if no_hand_start is None:
                         no_hand_start = time.time()
-                    elif time.time() - no_hand_start > 5:
+                    elif time.time() - no_hand_start > no_hand_timeout:
                         recording = False
-                        out.release()
+                        out.close()
                         out = None
+                        no_hand_start = None
                         logger.info(f"Recording stopped for camera {camera_id}: {current_video_file}")
                         
                         # Upload video to MinIO asynchronously (non-blocking)
@@ -130,15 +130,15 @@ def target_recording(camera_url, camera_id=None, should_stop_callback=None, max_
                             current_video_file = None
             
             if recording and out:
-                out.write(frame)
+                out.append_data(rgb)
                 
     finally:
         logger.info(f"Cleaning up resources for camera {camera_id}")
         
         # Close any active video recording
         if out:
-            out.release()
-            logger.info(f"Released video writer for camera {camera_id}")
+            out.close()
+            logger.info(f"Closed video writer for camera {camera_id}")
             
             # Upload unfinished video to MinIO if exists (synchronous in cleanup)
             if current_video_file and os.path.exists(current_video_file):

@@ -12,5 +12,7 @@ numpy==1.26.2
 mediapipe==0.10.9
 confluent-kafka==2.3.0
 minio==7.2.0
+imageio==2.31.1
+imageio-ffmpeg==0.4.9
 
 

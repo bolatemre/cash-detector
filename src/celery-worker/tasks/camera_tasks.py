@@ -20,6 +20,8 @@ from datetime import datetime
 from celery_app import celery_app
 from config.settings import settings
 from services.camera_service import target_recording, CameraConnectionLostError
+from services.utils import mask_camera_url
+from services.keycloak_auth import get_auth_headers
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +50,9 @@ def start_process_camera_stream(self, camera_id: str):
         api_url = f"{settings.master_service_url}/api/v1/camera/{camera_id}/url"
         logger.info(f"Fetching camera URL from: {api_url}")
         
-        response = requests.get(api_url, timeout=5)
+        # Add Keycloak authentication headers if configured
+        headers = get_auth_headers()
+        response = requests.get(api_url, headers=headers, timeout=5)
         
         if response.status_code == 404:
             error_msg = f"Camera {camera_id} not found in master-service"
@@ -67,7 +71,7 @@ def start_process_camera_stream(self, camera_id: str):
         expected_fps = data.get('expected_fps')
         record_fps = data.get('record_fps')
         
-        logger.info(f"Camera URL for {camera_id}: {camera_url}")
+        logger.info(f"Camera URL for {camera_id}: {mask_camera_url(camera_url)}")
         logger.info(f"Camera FPS settings - Expected: {expected_fps}, Record: {record_fps}")
         
         if not camera_url:
@@ -78,17 +82,6 @@ def start_process_camera_stream(self, camera_id: str):
         
         # Start processing - target_recording will create the video capture internally
         try:
-            # Callback to check if task was revoked
-            def should_stop():
-                revoked = celery_app.control.inspect().revoked()
-                if revoked:
-                    # revoked is a dict like {'worker_name': ['task_id1', 'task_id2']}
-                    for worker_tasks in revoked.values():
-                        if self.request.id in worker_tasks:
-                            logger.info(f"Task {self.request.id} was revoked, stopping")
-                            return True
-                return False
-            
             logger.info(f"Starting streaming for camera {camera_id}")
             logger.info(f"Task ID: {self.request.id} - Use celery.control.revoke('{self.request.id}', terminate=True) to stop")
             
@@ -96,8 +89,6 @@ def start_process_camera_stream(self, camera_id: str):
             target_recording(
                 camera_url, 
                 camera_id=camera_id, 
-                should_stop_callback=should_stop, 
-                max_failed_reads=settings.camera_max_failed_reads,
                 expected_fps=expected_fps,
                 record_fps=record_fps
             )
@@ -107,7 +98,7 @@ def start_process_camera_stream(self, camera_id: str):
             return {
                 'status': 'completed',
                 'camera_id': camera_id,
-                'camera_url': camera_url,
+                'camera_url': mask_camera_url(camera_url),
                 'message': 'Camera stream processing completed (stream ended or stopped)',
                 'timestamp': datetime.utcnow().isoformat()
             }

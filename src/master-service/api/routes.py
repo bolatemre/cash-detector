@@ -15,6 +15,7 @@ from models.schemas import (
 )
 from config.settings import settings
 from typing import Dict, List, Any
+from security.auth import require_jwt
 
 router = APIRouter()
 
@@ -32,7 +33,7 @@ async def health_check():
 
 
 @router.get("/camera/{camera_id}/email", response_model=EmailResponse)
-async def get_email_by_camera_id(camera_id: str, db: Session = Depends(get_db)):
+async def get_email_by_camera_id(camera_id: str, db: Session = Depends(get_db), claims: Dict[str, Any] = Depends(require_jwt)):
     """Get email associated with a camera ID"""
     camera = db.query(Camera).filter(Camera.camera_id == camera_id).first()
     
@@ -46,7 +47,7 @@ async def get_email_by_camera_id(camera_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/camera/{camera_id}/url", response_model=CameraUrlResponse)
-async def get_camera_url_by_id(camera_id: str, db: Session = Depends(get_db)):
+async def get_camera_url_by_id(camera_id: str, db: Session = Depends(get_db), claims: Dict[str, Any] = Depends(require_jwt)):
     """Get camera URL (RTSP stream URL) by camera ID"""
     camera = db.query(Camera).filter(Camera.camera_id == camera_id).first()
     
@@ -65,7 +66,7 @@ async def get_camera_url_by_id(camera_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/camera/{camera_id}/start-stream", status_code=status.HTTP_202_ACCEPTED)
-async def start_camera_stream(camera_id: str, db: Session = Depends(get_db)):
+async def start_camera_stream(camera_id: str, db: Session = Depends(get_db), claims: Dict[str, Any] = Depends(require_jwt)):
     """
     Trigger Celery task to start processing camera stream
     
@@ -102,7 +103,7 @@ async def start_camera_stream(camera_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/tasks/active", response_model=ActiveTasksResponse)
-async def get_active_tasks():
+async def get_active_tasks(claims: Dict[str, Any] = Depends(require_jwt)):
     """
     Get all currently active camera stream tasks
     
@@ -149,7 +150,7 @@ async def get_active_tasks():
 
 
 @router.get("/tasks/{task_id}", response_model=TaskStatusResponse)
-async def get_task_status(task_id: str):
+async def get_task_status(task_id: str, claims: Dict[str, Any] = Depends(require_jwt)):
     """
     Get status of a specific task by ID
     
@@ -188,7 +189,7 @@ async def get_task_status(task_id: str):
 
 
 @router.post("/tasks/{task_id}/stop", response_model=TaskStopResponse)
-async def stop_task(task_id: str):
+async def stop_task(task_id: str, claims: Dict[str, Any] = Depends(require_jwt)):
     """
     Stop a running task by revoking it
     

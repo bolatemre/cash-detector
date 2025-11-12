@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     # Master Service Configuration
     master_service_url: str = "http://master-service:8000"
     
+    # Keycloak Configuration (required)
+    keycloak_url: str  # e.g., http://keycloak:8080
+    keycloak_realm: str  # e.g., security-realm
+    keycloak_client_id: str  # e.g., security-service
+    keycloak_client_secret: str  # Client secret for service-to-service auth
+    
     # MinIO Configuration (required)
     minio_endpoint: str
     minio_access_key: str
