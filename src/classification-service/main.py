@@ -34,8 +34,12 @@ def main():
     
     try:
         # Initialize services
+        logger.info("Initializing Kafka consumer...")
         consumer = VideoConsumer()
+        
+        logger.info("Initializing classification service (loading ML models)...")
         classification_service = ClassificationService()
+        logger.info("Classification service initialized successfully")
         
         # Define callback function for processing videos
         def process_video_callback(video_data):
@@ -45,6 +49,10 @@ def main():
         logger.info("Starting video classification service...")
         consumer.consume_videos(process_video_callback)
         
+    except RuntimeError as e:
+        logger.error(f"CRITICAL: Service cannot start - {e}", exc_info=True)
+        logger.error("Please ensure all required ML models are available")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"Fatal error in classification service: {e}", exc_info=True)
         sys.exit(1)

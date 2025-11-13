@@ -256,11 +256,13 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
       MINIO_BUCKET: security-videos
       MINIO_SECURE: "false"
+      # Camera Processing Configuration
+      CAMERA_NO_HAND_TIMEOUT: ${CAMERA_NO_HAND_TIMEOUT:-5.0}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
-#      - ./videos:/app/videos
+      - ./videos:/app/videos
 
   # Classification Service - Video Classification
   classification-service:
@@ -289,13 +291,21 @@ services:
       TEMP_VIDEO_DIR: /tmp/videos
       # Service configuration
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # TODO: Add classification model configuration
+      # Classification Model Configuration
+      YOLO_MODEL_PATH: ${YOLO_MODEL_PATH:-/app/models/best_gpu.pt}
+      ACTION_MODEL_PATH: ${ACTION_MODEL_PATH:-/app/models/clf6.h5}
+      OBJECT_CLASS_ID: ${OBJECT_CLASS_ID:-0}
+      CONF_THRESHOLD: ${CONF_THRESHOLD:-0.2}
+      TARGET_INTERVAL: ${TARGET_INTERVAL:-0.1}
+      SEQUENCE_LENGTH: ${SEQUENCE_LENGTH:-200}
+      POSE_MIN_DETECTION_CONFIDENCE: ${POSE_MIN_DETECTION_CONFIDENCE:-0.3}
+      POSE_MIN_TRACKING_CONFIDENCE: ${POSE_MIN_TRACKING_CONFIDENCE:-0.2}
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
       - /tmp/videos:/tmp/videos
-      # TODO: Mount model directory when implementing classification
-      # - ./models:/app/models:ro
+      # Mount model directory (required for classification)
+      - ./models:/app/models:ro
 
   # Keycloak - Identity and Access Management
   keycloak:
