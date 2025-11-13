@@ -104,9 +104,23 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20)
                     output_dir = os.getenv('CAMERA_OUTPUT_DIR', '/app/output/trigger/test')
                     os.makedirs(output_dir, exist_ok=True)
                     current_video_file = f"{output_dir}/recording_{camera_id}_{int(time.time())}.mp4"
-                    out = imageio.get_writer(current_video_file, fps=record_fps, codec='libx264', quality=10)
+                    
+                    # Configure video writer with compression settings
+                    # CRF (Constant Rate Factor): 0-51, lower=better quality/larger file
+                    # Preset: faster=larger file, slower=smaller file
+                    out = imageio.get_writer(
+                        current_video_file,
+                        fps=record_fps,
+                        codec=settings.video_codec,
+                        pixelformat=settings.video_pixel_format,
+                        ffmpeg_params=[
+                            '-crf', str(settings.video_crf),
+                            '-preset', settings.video_preset
+                        ]
+                    )
                     recording = True
-                    logger.info(f"Recording started for camera {camera_id}: {current_video_file}")
+                    logger.info(f"Recording started for camera {camera_id}: {current_video_file} "
+                               f"(codec={settings.video_codec}, crf={settings.video_crf}, preset={settings.video_preset})")
             else:
                 if recording:
                     if no_hand_start is None:

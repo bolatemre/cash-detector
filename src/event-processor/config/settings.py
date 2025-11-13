@@ -35,7 +35,8 @@ class Settings(BaseSettings):
     keycloak_client_secret: str  # Client secret for service-to-service auth
     
     # MinIO Configuration (required)
-    minio_endpoint: str
+    minio_endpoint: str  # Internal endpoint for service access (e.g., minio:9000)
+    minio_public_url: str = ""  # Public/external URL for email notifications (e.g., http://localhost:9000)
     minio_access_key: str
     minio_secret_key: str
     minio_bucket: str

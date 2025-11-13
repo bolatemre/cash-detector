@@ -154,7 +154,8 @@ services:
       EMAIL_TEMPLATE_DIR: ${EMAIL_TEMPLATE_DIR:-templates}
       EMAIL_HTML_TEMPLATE: ${EMAIL_HTML_TEMPLATE:-email_suspicious_event.html}
       # MinIO configuration
-      MINIO_ENDPOINT: minio:9000
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
       MINIO_BUCKET: security-videos
@@ -258,6 +259,11 @@ services:
       MINIO_SECURE: "false"
       # Camera Processing Configuration
       CAMERA_NO_HAND_TIMEOUT: ${CAMERA_NO_HAND_TIMEOUT:-5.0}
+      # Video Recording Configuration
+      VIDEO_CODEC: ${VIDEO_CODEC:-libx264}
+      VIDEO_PRESET: ${VIDEO_PRESET:-fast}
+      VIDEO_CRF: ${VIDEO_CRF:-28}
+      VIDEO_PIXEL_FORMAT: ${VIDEO_PIXEL_FORMAT:-yuv420p}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     restart: unless-stopped
     volumes:

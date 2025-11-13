@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     camera_fps_warning_threshold: float = 1.0  # FPS threshold below which warning is logged
     camera_no_hand_timeout: float = 5.0  # Seconds to wait after hands disappear before stopping recording
     
+    # Video Recording Configuration
+    video_codec: str = "libx264"  # Video codec (libx264, libx265)
+    video_preset: str = "fast"  # Encoding preset: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow
+    video_crf: int = 28  # Constant Rate Factor: 0-51, lower=better quality, 23=default, 28=good for surveillance
+    video_pixel_format: str = "yuv420p"  # Pixel format for compatibility
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
