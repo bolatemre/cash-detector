@@ -298,7 +298,7 @@ services:
       # Service configuration
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Classification Model Configuration
-      YOLO_MODEL_PATH: ${YOLO_MODEL_PATH:-/app/models/best_gpu.pt}
+      YOLO_MODEL_PATH: ${YOLO_MODEL_PATH:-/app/models/gpu_80_15_5.pt}
       ACTION_MODEL_PATH: ${ACTION_MODEL_PATH:-/app/models/clf6.h5}
       OBJECT_CLASS_ID: ${OBJECT_CLASS_ID:-0}
       CONF_THRESHOLD: ${CONF_THRESHOLD:-0.2}
