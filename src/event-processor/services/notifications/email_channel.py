@@ -40,14 +40,12 @@ class EmailNotificationChannel(NotificationChannel):
         
         try:
             # Extract data
-            event_id = data.get('event_id')
             camera_id = data.get('camera_id')
             detected_at = data.get('detected_at')
             video_url = data.get('video_url')
             
             # Send via EmailService
             success = self.email_service.send_suspicious_event_notification(
-                event_id=event_id,
                 camera_id=camera_id,
                 detected_at=detected_at,
                 video_url=video_url,
