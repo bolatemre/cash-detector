@@ -299,13 +299,14 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Classification Model Configuration
       YOLO_MODEL_PATH: ${YOLO_MODEL_PATH:-/app/models/gpu_80_15_5.pt}
-      ACTION_MODEL_PATH: ${ACTION_MODEL_PATH:-/app/models/clf6.h5}
+      ACTION_MODEL_PATH: ${ACTION_MODEL_PATH:-/app/models/best_model_acc.keras}
       OBJECT_CLASS_ID: ${OBJECT_CLASS_ID:-0}
-      CONF_THRESHOLD: ${CONF_THRESHOLD:-0.2}
+      CONF_THRESHOLD: ${CONF_THRESHOLD:-0.6}
       TARGET_INTERVAL: ${TARGET_INTERVAL:-0.1}
       SEQUENCE_LENGTH: ${SEQUENCE_LENGTH:-200}
       POSE_MIN_DETECTION_CONFIDENCE: ${POSE_MIN_DETECTION_CONFIDENCE:-0.3}
       POSE_MIN_TRACKING_CONFIDENCE: ${POSE_MIN_TRACKING_CONFIDENCE:-0.2}
+      FEATURES_MIN_THRESHOLD: ${FEATURES_MIN_THRESHOLD:-3}
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs

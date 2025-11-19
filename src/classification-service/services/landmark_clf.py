@@ -65,6 +65,19 @@ class ActionClassifier:
     def __init__(self):
         """Initialize the classifier with models and configurations"""
         logger.info("Initializing ActionClassifier (required for service operation)")
+
+        logger.info(
+            "Classifier settings: "
+            f"yolo_model_path={settings.yolo_model_path}, "
+            f"action_model_path={settings.action_model_path}, "
+            f"pose_min_detection_confidence={settings.pose_min_detection_confidence}, "
+            f"pose_min_tracking_confidence={settings.pose_min_tracking_confidence}, "
+            f"object_class_id={settings.object_class_id}, "
+            f"conf_threshold={settings.conf_threshold}, "
+            f"target_interval={settings.target_interval}, "
+            f"sequence_length={settings.sequence_length}, "
+            f"features_min_threshold={settings.features_min_threshold}"
+        )
         
         # Load YOLO model for banknote detection
         try:
@@ -95,6 +108,7 @@ class ActionClassifier:
         self.conf_threshold = settings.conf_threshold
         self.target_interval = settings.target_interval
         self.sequence_length = settings.sequence_length
+        self.features_threshold = settings.features_min_threshold
         
         logger.info("ActionClassifier initialized successfully")
     
@@ -134,13 +148,11 @@ class ActionClassifier:
         if len(results) == 0 or results[0].boxes is None:
             return []
         
-        boxes = [
-            (*box.xyxy[0].cpu().numpy(),
-             float(box.conf[0]),
-             int(box.cls[0]))
-            for box in results[0].boxes
-            if float(box.conf[0]) > self.conf_threshold
-        ]
+        boxes = [(*box.xyxy[0].cpu().numpy(),
+                float(box.conf[0]),
+                int(box.cls[0]))
+                for box in results[0].boxes
+                if float(box.conf[0]) > self.conf_threshold]
         return boxes
     
     def compute_object_features(self, x1: float, y1: float, x2: float, y2: float, 
@@ -246,14 +258,17 @@ class ActionClassifier:
         
         logger.info(f"Total feature frames collected: {len(all_features)}")
         
-        if len(all_features) == 0:
-            logger.warning("No valid pose/object features extracted from video")
+        if len(all_features) < self.features_threshold:
+            logger.warning(
+                "Insufficient pose/object features extracted from video "
+                f"({len(all_features)} < {self.features_threshold})"
+            )
             return {
                 'predicted_class': 0,
                 'confidence': 0.0,
                 'class_name': 'normal',
-                'features_collected': 0,
-                'message': 'No banknotes detected in video'
+                'features_collected': len(all_features),
+                'message': 'Insufficient features collected for classification'
             }
         
         # Convert to numpy array

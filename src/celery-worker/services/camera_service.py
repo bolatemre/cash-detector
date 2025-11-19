@@ -36,7 +36,7 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20)
     no_hand_timeout = settings.camera_no_hand_timeout
     
     # Configure MediaPipe for better performance
-    hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.2, min_tracking_confidence=0.1)
+    hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3, min_tracking_confidence=0.1)
     recording = False
     no_hand_start = None
     out = None
@@ -100,6 +100,9 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20)
             hands_detected = results.multi_hand_landmarks is not None
 
             if hands_detected:
+                # Reset timeout countdown once hands are detected again
+                no_hand_start = None
+
                 if not recording:
                     output_dir = os.getenv('CAMERA_OUTPUT_DIR', '/app/output/trigger/test')
                     os.makedirs(output_dir, exist_ok=True)
