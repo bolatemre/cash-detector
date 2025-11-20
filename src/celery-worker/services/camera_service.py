@@ -20,7 +20,7 @@ class CameraConnectionLostError(Exception):
     """Raised when camera connection is lost (too many consecutive failed frame reads)"""
     pass
 
-def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20):
+def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20, is_video=False):
     """
     Function that take video as input. When hands are detected, video recording is started until hands disappear + timeout seconds.
     Short videos with detected object are stored in defined directory.
@@ -30,6 +30,7 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20)
         camera_id: Optional camera identifier for logging
         expected_fps: Expected FPS for processing
         record_fps: FPS for video recording
+        is_video: Boolean indicating if camera_url is a video file (True) or stream (False)
     """
 
     max_failed_reads = settings.camera_max_failed_reads
@@ -65,6 +66,8 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20)
         while True:
             ret, frame = cap.read()
             if not ret:
+                if is_video:
+                    break
                 failed_reads_count += 1
                 logger.warning(f"Failed to read frame from camera {camera_id} (attempt {failed_reads_count}/{max_failed_reads})")
                 

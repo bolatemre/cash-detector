@@ -37,7 +37,6 @@ class Settings(BaseSettings):
     sequence_length: int = 200  # Number of frames for sequence
     pose_min_detection_confidence: float = 0.3
     pose_min_tracking_confidence: float = 0.2
-    features_min_threshold: int = 5  # Minimum features required to run classifier
     
     model_config = SettingsConfigDict(
         env_file=".env",

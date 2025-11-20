@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Integer
+from sqlalchemy import Column, String, DateTime, Integer, Boolean
 from sqlalchemy.sql import func
 from database import Base
 from config.settings import settings
@@ -16,6 +16,7 @@ class Camera(Base):
     camera_url = Column(String(500), nullable=True)  # Camera stream/access URL
     expected_fps = Column(Integer, nullable=True, default=25)  # Expected FPS for processing
     record_fps = Column(Integer, nullable=True, default=20)  # FPS for video recording
+    is_video = Column(Boolean, nullable=False, default=False)  # True if camera_url is a video file, False if it's a stream
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
