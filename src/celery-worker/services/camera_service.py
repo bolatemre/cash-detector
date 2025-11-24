@@ -16,6 +16,43 @@ mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 
 
+def _get_rotation_angle(cap: cv2.VideoCapture) -> int:
+    """Read rotation metadata (if any) from capture device."""
+    orientation_prop = getattr(cv2, "CAP_PROP_ORIENTATION_META", None)
+    if orientation_prop is None:
+        return 0
+
+    try:
+        value = cap.get(orientation_prop)
+    except Exception:
+        return 0
+
+    if value is None:
+        return 0
+
+    try:
+        angle = int(value)
+    except (TypeError, ValueError):
+        return 0
+
+    angle %= 360
+    if angle in {0, 90, 180, 270}:
+        return angle
+
+    return 0
+
+
+def _apply_rotation(frame, angle: int):
+    """Rotate frame to compensate orientation metadata."""
+    if angle == 90:
+        return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    if angle == 180:
+        return cv2.rotate(frame, cv2.ROTATE_180)
+    if angle == 270:
+        return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    return frame
+
+
 class CameraConnectionLostError(Exception):
     """Raised when camera connection is lost (too many consecutive failed frame reads)"""
     pass
@@ -61,6 +98,10 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
         error_msg = f"Failed to open camera stream: {mask_camera_url(camera_url)}"
         logger.error(error_msg)
         raise ConnectionError(error_msg)
+
+    rotation_angle = _get_rotation_angle(cap)
+    if rotation_angle:
+        logger.info(f"Camera {camera_id}: applying rotation correction of {rotation_angle} degrees for portrait video")
     
     try:
         while True:
@@ -80,6 +121,10 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
             
             # Successfully read frame, reset counter
             failed_reads_count = 0
+
+            # Normalize orientation if needed
+            if rotation_angle:
+                frame = _apply_rotation(frame, rotation_angle)
             
             # Track frame processing rate
             frame_count += 1
@@ -98,8 +143,8 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
                 frame_count = 0
                 last_log_time = current_time
 
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = hands.process(rgb)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = hands.process(rgb_frame)
             hands_detected = results.multi_hand_landmarks is not None
 
             if hands_detected:
@@ -150,7 +195,7 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
                             current_video_file = None
             
             if recording and out:
-                out.append_data(rgb)
+                out.append_data(rgb_frame)
                 
     finally:
         logger.info(f"Cleaning up resources for camera {camera_id}")
