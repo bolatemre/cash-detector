@@ -75,7 +75,8 @@ class ActionClassifier:
             f"object_class_id={settings.object_class_id}, "
             f"conf_threshold={settings.conf_threshold}, "
             f"target_interval={settings.target_interval}, "
-            f"sequence_length={settings.sequence_length}"
+            f"sequence_length={settings.sequence_length}, "
+            f"features_min_threshold={settings.features_min_threshold}"
         )
         
         # Load YOLO model for banknote detection
@@ -107,7 +108,8 @@ class ActionClassifier:
         self.conf_threshold = settings.conf_threshold
         self.target_interval = settings.target_interval
         self.sequence_length = settings.sequence_length
-        
+        self.features_threshold = settings.features_min_threshold
+
         logger.info("ActionClassifier initialized successfully")
     
     def extract_keypoints(self, pose_results) -> np.ndarray:
@@ -256,14 +258,17 @@ class ActionClassifier:
         
         logger.info(f"Total feature frames collected: {len(all_features)}")
         
-        if len(all_features) < 1:
-            logger.warning("No valid pose/object features extracted from video")
+        if len(all_features) < self.features_threshold:
+            logger.warning(
+                "Insufficient pose/object features extracted from video "
+                f"({len(all_features)} < {self.features_threshold})"
+            )
             return {
                 'predicted_class': 0,
                 'confidence': 0.0,
                 'class_name': 'normal',
-                'features_collected': 0,
-                'message': 'No banknotes detected in video'
+                'features_collected': len(all_features),
+                'message': 'Insufficient features collected for classification'
             }
         
         # Convert to numpy array
