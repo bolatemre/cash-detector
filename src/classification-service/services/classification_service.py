@@ -1,10 +1,10 @@
 import logging
-import random
 import os
 from typing import Dict, Any
 from datetime import datetime
 from services.kafka_producer import send_classification_event
 from services.minio_service import MinioService
+from services.landmark_clf import ActionClassifier
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -16,6 +16,10 @@ class ClassificationService:
     def __init__(self):
         self.logger = logger
         self.minio_service = MinioService()
+        
+        # Initialize the action classifier (mandatory - service won't work without it)
+        self.action_classifier = ActionClassifier()
+        self.logger.info("ActionClassifier initialized successfully")
         
     def process_video(self, video_data: Dict[str, Any]) -> None:
         """
@@ -50,11 +54,8 @@ class ClassificationService:
             
             self.logger.info(f"Video downloaded to temporary file: {temp_file_path}")
             
-            # TODO: Implement video classification logic
-
-            # For now, simulate classification result (placeholder)
-            # In real implementation, this would be the result from your ML model
-            classification_result = self._simulate_classification(temp_file_path)
+            # Perform video classification using ActionClassifier
+            classification_result = self._classify_video(temp_file_path)
             
             # Send classification event to Kafka for event-processor to consume
             self._send_classification_event(
@@ -74,18 +75,34 @@ class ClassificationService:
             if temp_file_path:
                 self.minio_service.cleanup_temp_file(temp_file_path)
     
-    def _simulate_classification(self, video_file_path: str) -> str:
+    def _classify_video(self, video_file_path: str) -> str:
         """
-        Simulate video classification (placeholder for actual ML model)
+        Classify video using ActionClassifier
         
         Args:
             video_file_path: Path to downloaded video file
-            video_info: Video metadata from MinIO
             
         Returns:
             str: Classification result ('suspicious' or 'normal')
         """
-        return random.choice(["suspicious", "normal"])
+        try:
+            result = self.action_classifier.classify_video(video_file_path)
+            
+            class_name = result.get('class_name', 'normal')
+            confidence = result.get('confidence', 0.0)
+            features_collected = result.get('features_collected', 0)
+            
+            self.logger.info(
+                f"Video classification result: {class_name} "
+                f"(confidence: {confidence:.2f}, features: {features_collected})"
+            )
+            
+            return class_name
+            
+        except Exception as e:
+            self.logger.error(f"Error during video classification: {e}", exc_info=True)
+            # Return 'normal' as default in case of error to avoid false positives
+            return "normal"
     
     def _send_classification_event(self, camera_id: str, event_type: str, video_path: str, bucket_name: str) -> bool:
         """

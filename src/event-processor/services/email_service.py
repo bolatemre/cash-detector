@@ -2,6 +2,7 @@ import smtplib
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formatdate
 from datetime import datetime
 from typing import List
 from pathlib import Path
@@ -44,7 +45,6 @@ class EmailService:
     
     def send_suspicious_event_notification(
         self,
-        event_id: str,
         camera_id: str,
         detected_at: datetime,
         video_url: str,
@@ -77,7 +77,6 @@ class EmailService:
         
         # Prepare template variables
         template_vars = {
-            'event_id': event_id,
             'detected_time': detected_time_str,
             'camera_id': camera_id,
             'video_url': video_url
@@ -113,6 +112,7 @@ class EmailService:
             message['From'] = f"{self.from_name} <{self.from_email}>"
             message['To'] = ', '.join(recipients)
             message['Subject'] = subject
+            message['Date'] = formatdate(localtime=True)
             
             # Attach HTML version
             html_part = MIMEText(html_body, 'html')

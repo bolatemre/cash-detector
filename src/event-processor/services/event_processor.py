@@ -92,6 +92,44 @@ class EventProcessor:
             self.db_session.rollback()
             return False
     
+    def _convert_to_public_url(self, video_url: str) -> str:
+        """
+        Convert internal MinIO URL to public URL for email notifications
+        
+        Args:
+            video_url: Internal video URL (e.g., http://minio:9000/bucket/path)
+            
+        Returns:
+            str: Public video URL for external access
+        """
+        if not video_url or not settings.minio_public_url:
+            return video_url
+        
+        # Replace internal endpoint with public URL
+        # Internal: http://minio:9000/security-videos/suspicious/video.mp4
+        # Public: http://localhost:9000/security-videos/suspicious/video.mp4
+        
+        # Parse and replace the endpoint part
+        if settings.minio_endpoint in video_url:
+            public_url = video_url.replace(settings.minio_endpoint, settings.minio_public_url)
+            logger.debug(f"Converted URL: {video_url} -> {public_url}")
+            return public_url
+        
+        # Also handle cases where URL might have http:// prefix in endpoint
+        internal_url_variations = [
+            f"http://{settings.minio_endpoint}",
+            f"https://{settings.minio_endpoint}",
+            settings.minio_endpoint
+        ]
+        
+        for internal_url in internal_url_variations:
+            if internal_url in video_url:
+                public_url = video_url.replace(internal_url, settings.minio_public_url)
+                logger.debug(f"Converted URL: {video_url} -> {public_url}")
+                return public_url
+        
+        return video_url
+    
     def _send_notification(self, event: Event) -> bool:
         """
         Send notification for suspicious event through configured channels
@@ -116,7 +154,8 @@ class EventProcessor:
                 logger.warning(f"Event {event.id} has no video URL, notification may be incomplete")
                 video_url = "Video not available"
             else:
-                video_url = event.video_url
+                # Convert internal URL to public URL for email notification
+                video_url = self._convert_to_public_url(event.video_url)
             
             # Create notification data
             notification_data = NotificationData(

@@ -61,7 +61,8 @@ async def get_camera_url_by_id(camera_id: str, db: Session = Depends(get_db), cl
         camera_id=camera.camera_id, 
         camera_url=camera.camera_url,
         expected_fps=camera.expected_fps,
-        record_fps=camera.record_fps
+        record_fps=camera.record_fps,
+        is_video=camera.is_video
     )
 
 

@@ -20,7 +20,7 @@ class CameraConnectionLostError(Exception):
     """Raised when camera connection is lost (too many consecutive failed frame reads)"""
     pass
 
-def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20):
+def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20, is_video=False):
     """
     Function that take video as input. When hands are detected, video recording is started until hands disappear + timeout seconds.
     Short videos with detected object are stored in defined directory.
@@ -30,13 +30,14 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20)
         camera_id: Optional camera identifier for logging
         expected_fps: Expected FPS for processing
         record_fps: FPS for video recording
+        is_video: Boolean indicating if camera_url is a video file (True) or stream (False)
     """
 
     max_failed_reads = settings.camera_max_failed_reads
     no_hand_timeout = settings.camera_no_hand_timeout
     
     # Configure MediaPipe for better performance
-    hands = mp_hands.Hands(max_num_hands=2)
+    hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3, min_tracking_confidence=0.1)
     recording = False
     no_hand_start = None
     out = None
@@ -65,6 +66,8 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20)
         while True:
             ret, frame = cap.read()
             if not ret:
+                if is_video:
+                    break
                 failed_reads_count += 1
                 logger.warning(f"Failed to read frame from camera {camera_id} (attempt {failed_reads_count}/{max_failed_reads})")
                 
@@ -100,13 +103,30 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20)
             hands_detected = results.multi_hand_landmarks is not None
 
             if hands_detected:
+                # Reset timeout countdown once hands are detected again
+                no_hand_start = None
+
                 if not recording:
                     output_dir = os.getenv('CAMERA_OUTPUT_DIR', '/app/output/trigger/test')
                     os.makedirs(output_dir, exist_ok=True)
                     current_video_file = f"{output_dir}/recording_{camera_id}_{int(time.time())}.mp4"
-                    out = imageio.get_writer(current_video_file, fps=record_fps, codec='libx264', quality=10)
+                    
+                    # Configure video writer with compression settings
+                    # CRF (Constant Rate Factor): 0-51, lower=better quality/larger file
+                    # Preset: faster=larger file, slower=smaller file
+                    out = imageio.get_writer(
+                        current_video_file,
+                        fps=record_fps,
+                        codec=settings.video_codec,
+                        pixelformat=settings.video_pixel_format,
+                        ffmpeg_params=[
+                            '-crf', str(settings.video_crf),
+                            '-preset', settings.video_preset
+                        ]
+                    )
                     recording = True
-                    logger.info(f"Recording started for camera {camera_id}: {current_video_file}")
+                    logger.info(f"Recording started for camera {camera_id}: {current_video_file} "
+                               f"(codec={settings.video_codec}, crf={settings.video_crf}, preset={settings.video_preset})")
             else:
                 if recording:
                     if no_hand_start is None:
