@@ -38,6 +38,7 @@ class ClassificationService:
             video_path = video_data.get('video_path')
             bucket_name = video_data.get('bucket_name')
             event_type = video_data.get('event_type')
+            recording_started_at = video_data.get('recording_started_at')
             
             self.logger.info(f"Processing video classification for camera {camera_id}")
             self.logger.info(f"Video path: {video_path}")
@@ -62,7 +63,8 @@ class ClassificationService:
                 camera_id=camera_id,
                 event_type=classification_result,
                 video_path=video_path,
-                bucket_name=bucket_name
+                bucket_name=bucket_name,
+                detected_at=recording_started_at
             )
             
             self.logger.info(f"Video classification processing completed: {classification_result}")
@@ -104,7 +106,7 @@ class ClassificationService:
             # Return 'normal' as default in case of error to avoid false positives
             return "normal"
     
-    def _send_classification_event(self, camera_id: str, event_type: str, video_path: str, bucket_name: str) -> bool:
+    def _send_classification_event(self, camera_id: str, event_type: str, video_path: str, bucket_name: str, detected_at: str = None) -> bool:
         """
         Send classification event to Kafka for event-processor to consume
         
@@ -126,7 +128,7 @@ class ClassificationService:
                 camera_id=camera_id,
                 event_type=event_type,
                 video_url=video_url,
-                detected_at=datetime.utcnow().isoformat() + 'Z'
+                detected_at=detected_at or datetime.utcnow().isoformat() + 'Z'
             )
             
             if success:

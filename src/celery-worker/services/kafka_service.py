@@ -37,7 +37,7 @@ def delivery_callback(err, msg):
         logger.info(f'Message delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}')
 
 
-def send_video_uploaded_event(camera_id: str, video_path: str, bucket_name: str = None):
+def send_video_uploaded_event(camera_id: str, video_path: str, bucket_name: str = None, recording_started_at: str = None):
     """
     Send video uploaded event to Kafka
     
@@ -57,7 +57,8 @@ def send_video_uploaded_event(camera_id: str, video_path: str, bucket_name: str 
             'camera_id': camera_id,
             'video_path': video_path,
             'bucket_name': bucket_name,
-            'event_type': 'video_uploaded'
+            'event_type': 'video_uploaded',
+            'recording_started_at': recording_started_at
         }
         
         # Serialize message to JSON

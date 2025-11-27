@@ -12,6 +12,10 @@ RUN apt-get update && apt-get install -y \
     libxrender-dev \
     libgomp1 \
     libgl1 \
+    libegl1 \
+    libgles2 \
+    libopengl0 \
+    mesa-utils \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
