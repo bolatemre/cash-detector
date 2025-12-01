@@ -25,7 +25,7 @@ def get_minio_client():
     return client
 
 
-def upload_video_to_minio(local_file_path, camera_id):
+def upload_video_to_minio(local_file_path, camera_id, recording_started_at=None):
     """
     Upload video file to MinIO and delete local file
     
@@ -65,7 +65,8 @@ def upload_video_to_minio(local_file_path, camera_id):
         send_video_uploaded_event(
             camera_id=camera_id,
             video_path=object_name,
-            bucket_name=bucket_name
+            bucket_name=bucket_name,
+            recording_started_at=recording_started_at
         )
         
         # Delete local file after successful upload

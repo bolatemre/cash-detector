@@ -4,6 +4,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import formatdate
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import List
 from pathlib import Path
 from config.settings import settings
@@ -72,8 +73,19 @@ class EmailService:
         
         subject = f"⚠️ Suspicious Activity Detected - {camera_id}"
         
-        # Format detected time
-        detected_time_str = detected_at.strftime("%Y-%m-%d %H:%M:%S")
+        # Format detected time in configured server timezone
+        timezone_name = settings.server_timezone or "UTC"
+        try:
+            target_tz = ZoneInfo(timezone_name)
+        except Exception:
+            logger.warning(f"Invalid server timezone '{timezone_name}', falling back to UTC")
+            target_tz = ZoneInfo("UTC")
+
+        detected_dt = detected_at
+        if detected_dt.tzinfo is None:
+            detected_dt = detected_dt.replace(tzinfo=ZoneInfo("UTC"))
+        detected_dt = detected_dt.astimezone(target_tz)
+        detected_time_str = detected_dt.strftime("%Y-%m-%d %H:%M:%S")
         
         # Prepare template variables
         template_vars = {

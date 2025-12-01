@@ -162,6 +162,7 @@ services:
       MINIO_SUSPICIOUS_FOLDER: ${MINIO_SUSPICIOUS_FOLDER:-suspicious}
       MINIO_SECURE: "false"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SERVER_TIMEZONE: ${SERVER_TIMEZONE:-UTC}
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
@@ -265,6 +266,10 @@ services:
       VIDEO_CRF: ${VIDEO_CRF:-28}
       VIDEO_PIXEL_FORMAT: ${VIDEO_PIXEL_FORMAT:-yuv420p}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MEDIAPIPE_DISABLE_GPU: ${MEDIAPIPE_DISABLE_GPU:-"1"}
+      MEDIAPIPE_USE_CPU_ONLY: ${MEDIAPIPE_USE_CPU_ONLY:-"1"}
+      CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-"-1"}
+      OPENCV_OPENCL_RUNTIME: ${OPENCV_OPENCL_RUNTIME:-"disabled"}
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
@@ -307,6 +312,7 @@ services:
       POSE_MIN_DETECTION_CONFIDENCE: ${POSE_MIN_DETECTION_CONFIDENCE:-0.3}
       POSE_MIN_TRACKING_CONFIDENCE: ${POSE_MIN_TRACKING_CONFIDENCE:-0.2}
       FEATURES_MIN_THRESHOLD: ${FEATURES_MIN_THRESHOLD:-5}
+      CLASSIFICATION_CONFIDENCE_THRESHOLD: ${CLASSIFICATION_CONFIDENCE_THRESHOLD:-0.6}
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs

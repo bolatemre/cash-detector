@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     # Email Templates Configuration
     email_template_dir: str = "templates"
     email_html_template: str = "email_suspicious_event.html"
+
+    # Timezone configuration
+    server_timezone: str = "UTC"
     
     # Application Configuration
     log_level: str = "INFO"

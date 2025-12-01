@@ -1,6 +1,7 @@
 import cv2
 import time
 import logging
+from datetime import datetime
 import mediapipe as mp
 import os
 import threading
@@ -79,6 +80,7 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
     no_hand_start = None
     out = None
     current_video_file = None  # Track current recording file path
+    current_recording_started_at = None  # Track ISO timestamp of recording start
     failed_reads_count = 0
     
     # FPS tracking variables
@@ -155,6 +157,7 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
                     output_dir = os.getenv('CAMERA_OUTPUT_DIR', '/app/output/trigger/test')
                     os.makedirs(output_dir, exist_ok=True)
                     current_video_file = f"{output_dir}/recording_{camera_id}_{int(time.time())}.mp4"
+                    current_recording_started_at = datetime.utcnow().isoformat() + 'Z'
                     
                     # Configure video writer with compression settings
                     # CRF (Constant Rate Factor): 0-51, lower=better quality/larger file
@@ -187,12 +190,13 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
                         if current_video_file:
                             upload_thread = threading.Thread(
                                 target=upload_video_to_minio,
-                                args=(current_video_file, camera_id),
+                                args=(current_video_file, camera_id, current_recording_started_at),
                                 daemon=True
                             )
                             upload_thread.start()
                             logger.info(f"Started async upload for: {current_video_file}")
                             current_video_file = None
+                            current_recording_started_at = None
             
             if recording and out:
                 out.append_data(rgb_frame)
@@ -209,9 +213,10 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
             if current_video_file and os.path.exists(current_video_file):
                 logger.info(f"Uploading unfinished video to MinIO: {current_video_file}")
                 # Use synchronous upload in finally block to ensure cleanup is complete
-                minio_path = upload_video_to_minio(current_video_file, camera_id)
+                minio_path = upload_video_to_minio(current_video_file, camera_id, current_recording_started_at)
                 if minio_path:
                     logger.info(f"Unfinished video uploaded to MinIO: {minio_path}")
+                current_recording_started_at = None
         
         cap.release()
         cv2.destroyAllWindows()
