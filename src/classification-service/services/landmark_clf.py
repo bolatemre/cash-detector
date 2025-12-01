@@ -291,6 +291,15 @@ class ActionClassifier:
         predicted_class, confidence = self.predict_action(sequence)
         class_name = "suspicious" if predicted_class == 1 else "normal"
         
+        # If classification is suspicious but confidence is below threshold, treat as normal
+        if class_name == 'suspicious' and confidence < settings.classification_confidence_threshold:
+            logger.info(
+                f"Suspicious classification with low confidence ({confidence:.2f} < {settings.classification_confidence_threshold}), "
+                f"treating as normal (features: {len(all_features)})"
+            )
+            predicted_class = 0
+            class_name = 'normal'
+        
         result = {
             'predicted_class': predicted_class,
             'confidence': confidence,

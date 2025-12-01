@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     pose_min_detection_confidence: float = 0.3
     pose_min_tracking_confidence: float = 0.2
     features_min_threshold: int = 5  # Minimum features required to run classifier
+    classification_confidence_threshold: float = 0.6  # If suspicious classification confidence is below this, treat as normal
     
     model_config = SettingsConfigDict(
         env_file=".env",
