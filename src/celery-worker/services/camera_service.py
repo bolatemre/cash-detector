@@ -58,7 +58,7 @@ class CameraConnectionLostError(Exception):
     """Raised when camera connection is lost (too many consecutive failed frame reads)"""
     pass
 
-def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20, is_video=False):
+def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20, is_video=False, buffersize=1):
     """
     Function that take video as input. When hands are detected, video recording is started until hands disappear + timeout seconds.
     Short videos with detected object are stored in defined directory.
@@ -69,13 +69,17 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
         expected_fps: Expected FPS for processing
         record_fps: FPS for video recording
         is_video: Boolean indicating if camera_url is a video file (True) or stream (False)
+        buffersize: Buffer size for video capture (minimize buffer to get latest frame, default=1)
     """
 
     max_failed_reads = settings.camera_max_failed_reads
     no_hand_timeout = settings.camera_no_hand_timeout
     
-    # Configure MediaPipe for better performance
-    hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3, min_tracking_confidence=0.1)
+    hands = mp_hands.Hands(
+        max_num_hands=2,
+        min_detection_confidence=0.3,
+        min_tracking_confidence=0.1
+    )
     recording = False
     no_hand_start = None
     out = None
@@ -91,10 +95,11 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
     # Create video capture object with optimized settings for streaming
     logger.info(f"Connecting to camera stream: {mask_camera_url(camera_url)}")
     cap = cv2.VideoCapture(camera_url, cv2.CAP_FFMPEG)
-    
-    # Configure video capture for RTSP/network streams
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffer to get latest frame
-    cap.set(cv2.CAP_PROP_FPS, expected_fps)  # Set expected FPS from camera settings
+
+    # Configure video capture properties
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, buffersize)
+    cap.set(cv2.CAP_PROP_FPS, expected_fps)
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'H264'))
     
     if not cap.isOpened():
         error_msg = f"Failed to open camera stream: {mask_camera_url(camera_url)}"

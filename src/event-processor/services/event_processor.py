@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 from sqlalchemy.orm import Session
+from urllib.parse import urlparse, quote
 from models.event import Event
 from models.schemas import EventMessage
 from services.notifications import NotificationService, NotificationData
@@ -94,41 +95,58 @@ class EventProcessor:
     
     def _convert_to_public_url(self, video_url: str) -> str:
         """
-        Convert internal MinIO URL to public URL for email notifications
+        Convert internal MinIO URL to MinIO API preview URL for email notifications
+        
+        Generates URL in format:
+        https://minio-public-url/api/v1/buckets/{bucket}/objects/download?preview=true&prefix={object_path}&version_id=null
         
         Args:
-            video_url: Internal video URL (e.g., http://minio:9000/bucket/path)
+            video_url: Internal video URL (e.g., http://minio:9000/security-videos/suspicious/video.mp4)
             
         Returns:
-            str: Public video URL for external access
+            str: MinIO API preview URL for video preview
         """
         if not video_url or not settings.minio_public_url:
             return video_url
         
-        # Replace internal endpoint with public URL
-        # Internal: http://minio:9000/security-videos/suspicious/video.mp4
-        # Public: http://localhost:9000/security-videos/suspicious/video.mp4
-        
-        # Parse and replace the endpoint part
-        if settings.minio_endpoint in video_url:
-            public_url = video_url.replace(settings.minio_endpoint, settings.minio_public_url)
-            logger.debug(f"Converted URL: {video_url} -> {public_url}")
-            return public_url
-        
-        # Also handle cases where URL might have http:// prefix in endpoint
-        internal_url_variations = [
-            f"http://{settings.minio_endpoint}",
-            f"https://{settings.minio_endpoint}",
-            settings.minio_endpoint
-        ]
-        
-        for internal_url in internal_url_variations:
-            if internal_url in video_url:
-                public_url = video_url.replace(internal_url, settings.minio_public_url)
-                logger.debug(f"Converted URL: {video_url} -> {public_url}")
-                return public_url
-        
-        return video_url
+        try:
+            # Parse URL to extract bucket and object path
+            # Example: http://minio:9000/security-videos/suspicious/video.mp4
+            parsed = urlparse(video_url)
+            path = parsed.path.lstrip('/')
+            
+            # Split path into bucket and object path
+            # path = "security-videos/suspicious/video.mp4" -> bucket="security-videos", object_path="suspicious/video.mp4"
+            path_parts = path.split('/', 1)
+            
+            if len(path_parts) == 2:
+                bucket = path_parts[0]
+                object_path = path_parts[1]
+            else:
+                # Fallback: use configured bucket if not in URL
+                bucket = settings.minio_bucket
+                object_path = path_parts[0] if path_parts else ''
+            
+            if not object_path:
+                logger.warning(f"Could not extract object path from URL: {video_url}")
+                return video_url
+            
+            # URL-encode the object path (e.g., "suspicious/video.mp4" -> "suspicious%2Fvideo.mp4")
+            encoded_prefix = quote(object_path, safe='')
+            
+            # Remove trailing slash from public URL if present
+            base_url = settings.minio_public_url.rstrip('/')
+            
+            # Build MinIO API preview URL
+            # Format: https://minio-public-url/api/v1/buckets/{bucket}/objects/download?preview=true&prefix={object_path}&version_id=null
+            preview_url = f"{base_url}/api/v1/buckets/{bucket}/objects/download?preview=true&prefix={encoded_prefix}&version_id=null"
+            
+            logger.debug(f"Generated preview URL: {video_url} -> {preview_url}")
+            return preview_url
+            
+        except Exception as e:
+            logger.error(f"Error generating preview URL: {e}", exc_info=True)
+            return video_url
     
     def _send_notification(self, event: Event) -> bool:
         """

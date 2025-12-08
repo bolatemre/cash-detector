@@ -11,6 +11,7 @@ class CameraBase(BaseModel):
     expected_fps: Optional[int] = 25
     record_fps: Optional[int] = 20
     is_video: Optional[bool] = False
+    buffersize: Optional[int] = 1
 
 
 class CameraCreate(CameraBase):
@@ -25,6 +26,7 @@ class CameraUpdate(BaseModel):
     expected_fps: Optional[int] = None
     record_fps: Optional[int] = None
     is_video: Optional[bool] = None
+    buffersize: Optional[int] = None
 
 
 class CameraResponse(CameraBase):
@@ -50,6 +52,7 @@ class CameraUrlResponse(BaseModel):
     expected_fps: Optional[int] = 25
     record_fps: Optional[int] = 20
     is_video: Optional[bool] = False
+    buffersize: Optional[int] = 1
 
 
 # Task-related schemas

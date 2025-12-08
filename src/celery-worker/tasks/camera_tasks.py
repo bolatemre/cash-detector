@@ -71,10 +71,12 @@ def start_process_camera_stream(self, camera_id: str):
         expected_fps = data.get('expected_fps')
         record_fps = data.get('record_fps')
         is_video = data.get('is_video', False)
+        buffersize = data.get('buffersize', 1)
         
         logger.info(f"Camera URL for {camera_id}: {mask_camera_url(camera_url)}")
         logger.info(f"Camera FPS settings - Expected: {expected_fps}, Record: {record_fps}")
         logger.info(f"Camera is_video: {is_video}")
+        logger.info(f"Camera buffersize: {buffersize}")
         
         if not camera_url:
             error_msg = f"Camera {camera_id} has no URL configured"
@@ -93,7 +95,8 @@ def start_process_camera_stream(self, camera_id: str):
                 camera_id=camera_id, 
                 expected_fps=expected_fps,
                 record_fps=record_fps,
-                is_video=is_video
+                is_video=is_video,
+                buffersize=buffersize
             )
             
             # If we reach here, it means the stream ended naturally or was stopped

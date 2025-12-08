@@ -259,6 +259,9 @@ services:
       MINIO_BUCKET: security-videos
       MINIO_SECURE: "false"
       # Camera Processing Configuration
+      CAMERA_MAX_FAILED_READS: ${CAMERA_MAX_FAILED_READS:-30}
+      CAMERA_FPS_LOG_INTERVAL: ${CAMERA_FPS_LOG_INTERVAL:-1.0}
+      CAMERA_FPS_WARNING_THRESHOLD: ${CAMERA_FPS_WARNING_THRESHOLD:-1.0}
       CAMERA_NO_HAND_TIMEOUT: ${CAMERA_NO_HAND_TIMEOUT:-5.0}
       # Video Recording Configuration
       VIDEO_CODEC: ${VIDEO_CODEC:-libx264}

@@ -2,11 +2,8 @@
 kafka-python==2.0.2
 confluent-kafka==2.3.0
 
-# Logging and utilities
-structlog==23.2.0
-
 # ML/AI dependencies for classification
-tensorflow==2.18.1
+tensorflow-cpu==2.18.1
 opencv-python-headless==4.8.1.78
 numpy==1.26.2
 mediapipe==0.10.21
@@ -15,10 +12,6 @@ ultralytics==8.3.213
 # MinIO client (for downloading videos)
 minio==7.2.0
 
-# HTTP client for API calls
-requests==2.31.0
-
 # Environment and configuration
-python-dotenv==1.0.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
