@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     video_crf: int = 28  # Constant Rate Factor: 0-51, lower=better quality, 23=default, 28=good for surveillance
     video_pixel_format: str = "yuv420p"  # Pixel format for compatibility
     
+    # FFmpeg Decoder Configuration (for handling HEVC errors)
+    ffmpeg_err_detect: str = "aggressive"  # Error detection: crccheck, bitstream, buffer, explode, ignore_err, careful, compliant, aggressive
+    ffmpeg_flags: str = "+genpts+discardcorrupt"  # Decoder flags: low_delay, discardcorrupt, output_corrupt
+    ffmpeg_error_recognition: str = "aggressive"  # Error recognition: careful, compliant, aggressive, very_aggressive
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

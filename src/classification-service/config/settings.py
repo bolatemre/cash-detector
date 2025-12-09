@@ -11,6 +11,12 @@ class Settings(BaseSettings):
     kafka_group_id: str = "classification-service-group"
     kafka_security_events_topic: str = "security-events"
     
+    # Kafka Consumer Configuration (for handling long-running video processing)
+    kafka_max_poll_interval_ms: int = 900000  # 15 minutes - time allowed between poll() calls
+    kafka_max_poll_records: int = 1  # Process one video at a time to avoid timeout
+    kafka_session_timeout_ms: int = 45000  # 45 seconds - time to detect consumer failure
+    kafka_heartbeat_interval_ms: int = 15000  # 15 seconds - heartbeat frequency
+    
     # MinIO Configuration
     minio_endpoint: str = "http://minio:9000"
     minio_access_key: str = "minioadmin"

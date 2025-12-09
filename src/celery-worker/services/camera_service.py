@@ -91,7 +91,12 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
     frame_count = 0
     start_time = time.time()
     last_log_time = start_time
-    
+    ffmpeg_options = (
+        f"err_detect|{settings.ffmpeg_err_detect};"
+        f"flags|{settings.ffmpeg_flags};"
+        f"error|{settings.ffmpeg_error_recognition}"
+    )
+    os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = ffmpeg_options
     # Create video capture object with optimized settings for streaming
     logger.info(f"Connecting to camera stream: {mask_camera_url(camera_url)}")
     cap = cv2.VideoCapture(camera_url, cv2.CAP_FFMPEG)
@@ -99,7 +104,6 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
     # Configure video capture properties
     cap.set(cv2.CAP_PROP_BUFFERSIZE, buffersize)
     cap.set(cv2.CAP_PROP_FPS, expected_fps)
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'H264'))
     
     if not cap.isOpened():
         error_msg = f"Failed to open camera stream: {mask_camera_url(camera_url)}"
@@ -124,6 +128,7 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
                     logger.error(error_msg)
                     raise CameraConnectionLostError(error_msg)
                 
+                time.sleep(0.01)
                 continue
             
             # Successfully read frame, reset counter
