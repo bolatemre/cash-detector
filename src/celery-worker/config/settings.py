@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     video_preset: str = "fast"  # Encoding preset: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow
     video_crf: int = 28  # Constant Rate Factor: 0-51, lower=better quality, 23=default, 28=good for surveillance
     video_pixel_format: str = "yuv420p"  # Pixel format for compatibility
+    video_max_duration: float = 120.0  # Maximum recording duration in seconds (default: 2 minutes)
     
     # FFmpeg Decoder Configuration (for handling HEVC errors)
     ffmpeg_err_detect: str = "aggressive"  # Error detection: crccheck, bitstream, buffer, explode, ignore_err, careful, compliant, aggressive

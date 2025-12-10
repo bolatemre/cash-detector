@@ -158,8 +158,8 @@ services:
       MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
-      MINIO_BUCKET: security-videos
-      MINIO_SUSPICIOUS_FOLDER: ${MINIO_SUSPICIOUS_FOLDER:-suspicious}
+      MINIO_BUCKET: ${EVENT_PROCESSOR_MINIO_BUCKET:-suspicious-videos}
+      MINIO_SUSPICIOUS_FOLDER: ${MINIO_SUSPICIOUS_FOLDER:-}
       MINIO_SECURE: "false"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       SERVER_TIMEZONE: ${SERVER_TIMEZONE:-UTC}
@@ -256,7 +256,7 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
-      MINIO_BUCKET: security-videos
+      MINIO_BUCKET: ${CELERY_WORKER_MINIO_BUCKET:-security-videos}
       MINIO_SECURE: "false"
       # Camera Processing Configuration
       CAMERA_MAX_FAILED_READS: ${CAMERA_MAX_FAILED_READS:-30}

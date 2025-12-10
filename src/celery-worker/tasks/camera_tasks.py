@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
     acks_late=False,  # Acknowledge immediately for long-lived stream tasks
     reject_on_worker_lost=True,
     autoretry_for=(CameraConnectionLostError, ConnectionError, requests.exceptions.RequestException),
+    max_retries=settings.celery_task_max_retries,
     retry_kwargs={
-        'max_retries': settings.celery_task_max_retries,
         'countdown': settings.celery_task_retry_backoff
     },
     retry_backoff=settings.celery_task_retry_backoff,

@@ -33,48 +33,82 @@ class MinioService:
     
     def move_video_to_suspicious(self, video_url: str) -> str:
         """
-        Move video from events/ folder to suspicious/ folder
+        Move video from events/ folder to suspicious/ folder.
+        If suspicious_folder is not set and video is in a different bucket, move it to settings.minio_bucket.
         
         Args:
             video_url: Full URL to the video file
+            Example: http://localhost:9000/security-videos/events/video.mp4
+            Example: http://localhost:9000/other-bucket/events/video.mp4
             
         Returns:
             str: New URL to the moved video file
         """
         try:
-            # Parse URL to extract object name
+            # Parse URL to extract bucket and object name
             # Example: http://localhost:9000/security-videos/events/video.mp4
             parsed = urlparse(video_url)
-            object_name = parsed.path.lstrip('/')
+            path_parts = parsed.path.lstrip('/').split('/', 1)
             
-            # Remove bucket name from path if present
-            if object_name.startswith(f"{self.bucket}/"):
-                object_name = object_name[len(self.bucket)+1:]
+            # Extract source bucket and object name
+            if len(path_parts) == 2:
+                source_bucket = path_parts[0]
+                object_name = path_parts[1]
+            else:
+                # If no bucket in path, assume it's in the configured bucket
+                source_bucket = self.bucket
+                object_name = path_parts[0] if path_parts else ''
             
-            # Skip if already in suspicious folder
-            if object_name.startswith(f'{self.suspicious_folder}/'):
-                logger.info(f"Video already in {self.suspicious_folder} folder: {object_name}")
-                return video_url
+            target_bucket = self.bucket
             
-            # Generate new object name in suspicious folder
-            # events/video.mp4 -> suspicious/video.mp4 (or custom folder name)
-            filename = object_name.split('/')[-1]
-            new_object_name = f"{self.suspicious_folder}/{filename}"
+            # If suspicious_folder is not set
+            if not self.suspicious_folder or not self.suspicious_folder.strip():
+                # Only move if buckets are different
+                if source_bucket != target_bucket:
+                    # Move to target bucket keeping the same folder structure
+                    new_object_name = object_name
+                    logger.info(f"Moving video from bucket {source_bucket} to {target_bucket} (same folder): {object_name} -> {new_object_name}")
+                else:
+                    # Same bucket, no suspicious_folder - don't move
+                    logger.info(f"Suspicious folder not set and same bucket, not moving: {object_name}")
+                    return video_url
+            else:
+                # suspicious_folder is set - use original logic
+                # Skip if already in suspicious folder
+                if object_name.startswith(f'{self.suspicious_folder}/'):
+                    logger.info(f"Video already in {self.suspicious_folder} folder: {object_name}")
+                    return video_url
+                
+                # Generate new object name in suspicious folder
+                # events/video.mp4 -> suspicious/video.mp4 (or custom folder name)
+                filename = object_name.split('/')[-1]
+                new_object_name = f"{self.suspicious_folder}/{filename}"
+                
+                # Check if we need to move between buckets
+                if source_bucket != target_bucket:
+                    logger.info(f"Moving video from bucket {source_bucket} to {target_bucket}: {object_name} -> {new_object_name}")
+                else:
+                    logger.info(f"Moving video within bucket {target_bucket}: {object_name} -> {new_object_name}")
             
-            logger.info(f"Moving video: {object_name} -> {new_object_name}")
+            # Ensure target bucket exists
+            if not self.client.bucket_exists(target_bucket):
+                self.client.make_bucket(target_bucket)
+                logger.info(f"Created target bucket: {target_bucket}")
             
-            # Copy object to new location
+            # Copy object to new location (supports cross-bucket copy)
             self.client.copy_object(
-                self.bucket,
+                target_bucket,
                 new_object_name,
-                CopySource(self.bucket, object_name)
+                CopySource(source_bucket, object_name)
             )
             
-            # Delete original object
-            self.client.remove_object(self.bucket, object_name)
+            # Delete original object from source bucket
+            self.client.remove_object(source_bucket, object_name)
             
-            # Generate new URL
-            new_url = video_url.replace(object_name, new_object_name)
+            # Generate new URL with target bucket
+            # Replace the bucket and object name in the URL
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+            new_url = f"{base_url}/{target_bucket}/{new_object_name}"
             
             logger.info(f"Video moved successfully: {new_url}")
             return new_url
