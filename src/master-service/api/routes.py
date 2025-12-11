@@ -11,7 +11,9 @@ from models.schemas import (
     TaskStatusResponse, 
     ActiveTasksResponse,
     TaskStopResponse,
-    CameraStreamTask
+    CameraStreamTask,
+    BatchStartRequest,
+    BatchStartResponse
 )
 from config.settings import settings
 from typing import Dict, List, Any
@@ -102,6 +104,57 @@ async def start_camera_stream(camera_id: str, db: Session = Depends(get_db), cla
         'task_id': task.id,
         'message': f'Stream processing task started for camera {camera_id}'
     }
+
+
+@router.post("/camera/batch-start-stream", response_model=BatchStartResponse, status_code=status.HTTP_202_ACCEPTED)
+async def batch_start_camera_stream(
+    request: BatchStartRequest, 
+    db: Session = Depends(get_db), 
+    claims: Dict[str, Any] = Depends(require_jwt)
+):
+    """
+    Trigger Celery tasks to start processing multiple camera streams
+    
+    Args:
+        request: BatchStartRequest containing list of camera_ids
+        
+    Returns:
+        BatchStartResponse with mapping of camera_id to task_id
+    """
+    if not request.camera_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="camera_ids list cannot be empty"
+        )
+    
+    # Verify all cameras exist and have URLs
+    cameras = db.query(Camera).filter(Camera.camera_id.in_(request.camera_ids)).all()
+    found_camera_ids = {camera.camera_id for camera in cameras}
+    missing_cameras = set(request.camera_ids) - found_camera_ids
+    
+    if missing_cameras:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Cameras not found: {', '.join(missing_cameras)}"
+        )
+    
+    # Check for cameras without URLs
+    cameras_without_url = [camera.camera_id for camera in cameras if not camera.camera_url]
+    if cameras_without_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cameras without URL configured: {', '.join(cameras_without_url)}"
+        )
+    
+    # Trigger Celery batch task asynchronously (don't wait for completion)
+    task = celery_app.send_task('tasks.start_process_camera_stream_batch', args=[request.camera_ids])
+    
+    return BatchStartResponse(
+        status='accepted',
+        tasks={},  # Task IDs will be populated by the batch task asynchronously
+        total_count=len(request.camera_ids),
+        message=f'Batch stream processing started for {len(request.camera_ids)} cameras. Batch task ID: {task.id}'
+    )
 
 
 @router.get("/tasks/active", response_model=ActiveTasksResponse)

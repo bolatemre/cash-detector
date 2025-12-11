@@ -92,3 +92,16 @@ class TaskStopResponse(BaseModel):
     task_id: str
     message: str
 
+
+class BatchStartRequest(BaseModel):
+    """Request schema for batch starting camera streams"""
+    camera_ids: List[str]
+
+
+class BatchStartResponse(BaseModel):
+    """Response schema for batch starting camera streams"""
+    status: str
+    tasks: Dict[str, str]  # camera_id -> task_id
+    total_count: int
+    message: str
+
