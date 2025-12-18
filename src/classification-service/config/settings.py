@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     service_version: str = "1.0.0"
     
     # Classification Model Configuration
-    yolo_model_path: str = "best_gpu.pt"
-    action_model_path: str = "clf6.h5"
+    yolo_model_path: str
+    action_model_path: str
     object_class_id: int = 0  # Banknote class ID
     conf_threshold: float = 0.2  # YOLO confidence threshold
     target_interval: float = 0.1  # Frame sampling interval (seconds)
@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     pose_min_tracking_confidence: float = 0.2
     features_min_threshold: int = 5  # Minimum features required to run classifier
     classification_confidence_threshold: float = 0.6  # If suspicious classification confidence is below this, treat as normal
+    
+    # YOLOv7 Custom Model Configuration
+    yolov7_config_path: str = "../yolov7/cfg/training/yolov7_tiny_2cl.yaml"  # Relative to classification-service directory
+    yolov7_device: str = "cpu"  # Device for YOLOv7 model (cpu/cuda)
     
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -1,5 +1,5 @@
 """
-Action Recognition Classifier using YOLO and MediaPipe Pose
+Action Recognition Classifier using YOLOv7 and MediaPipe Pose
 
 ROI - area around body
 MediaPipe pose detects poseLandmarks
@@ -10,11 +10,21 @@ Classification:
 - class 1: pocket (suspicious action)
 - class 0: cash_register (normal action)
 """
+import torch
+import sys
+import os
 import cv2
 import numpy as np
 import logging
 from typing import Tuple, List, Optional, Dict
-from ultralytics import YOLO
+
+# Add yolov7 directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'yolov7'))
+
+from utils.general import non_max_suppression
+from utils.datasets import letterbox
+from models.yolo import Model
+
 import mediapipe as mp
 from tensorflow.keras.models import load_model
 from config.settings import settings
@@ -52,11 +62,11 @@ SELECTED_LANDMARKS = [
 ]
 
 
-class ActionClassifier:
+class YOLOv7ActionClassifier:
     """
-    Action Recognition Classifier for detecting suspicious actions
+    Action Recognition Classifier for detecting suspicious actions using YOLOv7
     
-    Uses YOLO for banknote detection and MediaPipe Pose for body landmark tracking
+    Uses custom YOLOv7 for banknote detection and MediaPipe Pose for body landmark tracking
     to classify actions as either:
     - 1: pocket (suspicious - money going into pocket)
     - 0: cash_register (normal - money going into register)
@@ -64,10 +74,11 @@ class ActionClassifier:
     
     def __init__(self):
         """Initialize the classifier with models and configurations"""
-        logger.info("Initializing ActionClassifier (required for service operation)")
+        logger.info("Initializing YOLOv7ActionClassifier (required for service operation)")
 
         logger.info(
             "Classifier settings: "
+            f"yolov7_config_path={settings.yolov7_config_path}, "
             f"yolo_model_path={settings.yolo_model_path}, "
             f"action_model_path={settings.action_model_path}, "
             f"pose_min_detection_confidence={settings.pose_min_detection_confidence}, "
@@ -79,21 +90,42 @@ class ActionClassifier:
             f"features_min_threshold={settings.features_min_threshold}"
         )
         
-        # Load YOLO model for banknote detection
+        # Load YOLOv7 model for banknote detection
         try:
-            self.yolo = YOLO(settings.yolo_model_path)
-            logger.info(f"YOLO model loaded successfully from {settings.yolo_model_path}")
+            self.device = settings.yolov7_device
+            # Build absolute path for config file (relative to classification-service directory)
+            base_dir = os.path.dirname(os.path.dirname(__file__))  # classification-service directory
+            config_path = os.path.abspath(os.path.join(base_dir, settings.yolov7_config_path))
+            
+            self.yolo_model = Model(config_path).to(self.device)
+            
+            # Build absolute path for state file (relative to project root)
+            project_root = os.path.dirname(os.path.dirname(base_dir))  # project root
+            state_path = os.path.abspath(os.path.join(project_root, settings.yolo_model_path))
+            
+            state = torch.load(state_path, map_location=self.device)
+            self.yolo_model.load_state_dict(state, strict=True)
+            self.yolo_model.eval()
+            logger.info(f"YOLOv7 model loaded successfully from {state_path}")
         except Exception as e:
-            logger.error(f"CRITICAL: Failed to load YOLO model from {settings.yolo_model_path}: {e}")
-            logger.error("Service cannot start without YOLO model. Please ensure model file exists.")
-            raise RuntimeError(f"Failed to initialize YOLO model: {e}") from e
+            logger.error(f"CRITICAL: Failed to load YOLOv7 model: {e}")
+            logger.error("Service cannot start without YOLOv7 model. Please ensure model files exist.")
+            raise RuntimeError(f"Failed to initialize YOLOv7 model: {e}") from e
         
         # Load action classification model
         try:
-            self.action_model = load_model(settings.action_model_path, compile=False)
-            logger.info(f"Action classification model loaded successfully from {settings.action_model_path}")
+            # Handle both absolute and relative paths
+            if os.path.isabs(settings.action_model_path):
+                action_model_path = settings.action_model_path
+            else:
+                # If relative, assume it's relative to project root
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))  # project root
+                action_model_path = os.path.abspath(os.path.join(project_root, settings.action_model_path))
+            
+            self.action_model = load_model(action_model_path, compile=False)
+            logger.info(f"Action classification model loaded successfully from {action_model_path}")
         except Exception as e:
-            logger.error(f"CRITICAL: Failed to load action model from {settings.action_model_path}: {e}")
+            logger.error(f"CRITICAL: Failed to load action model from {action_model_path}: {e}")
             logger.error("Service cannot start without action model. Please ensure model file exists.")
             raise RuntimeError(f"Failed to initialize action classification model: {e}") from e
         
@@ -110,7 +142,7 @@ class ActionClassifier:
         self.sequence_length = settings.sequence_length
         self.features_threshold = settings.features_min_threshold
 
-        logger.info("ActionClassifier initialized successfully")
+        logger.info("YOLOv7ActionClassifier initialized successfully")
     
     def extract_keypoints(self, pose_results) -> np.ndarray:
         """
@@ -136,7 +168,7 @@ class ActionClassifier:
     
     def detect_objects(self, frame: np.ndarray) -> List[Tuple]:
         """
-        Run YOLO object detection and filter by confidence
+        Run YOLOv7 object detection and return bounding boxes
         
         Args:
             frame: Input video frame
@@ -144,15 +176,25 @@ class ActionClassifier:
         Returns:
             List of detected objects (x1, y1, x2, y2, conf, cls)
         """
-        results = self.yolo(frame, verbose=False)
-        if len(results) == 0 or results[0].boxes is None:
+        img = letterbox(frame, 640, stride=32)[0]      
+        img = img[:, :, ::-1].transpose(2, 0, 1)       
+        img = np.ascontiguousarray(img)
+        img = torch.from_numpy(img).float()
+        img /= 255.0
+        img = img.unsqueeze(0)
+        img = img.to(self.device)
+
+        with torch.no_grad():
+            pred = self.yolo_model(img)[0]
+
+        # Apply Non-Max Suppression
+        pred = non_max_suppression(pred, self.conf_threshold, 0.45)
+        if pred[0] is None:
             return []
-        
-        boxes = [(*box.xyxy[0].cpu().numpy(),
-                float(box.conf[0]),
-                int(box.cls[0]))
-                for box in results[0].boxes
-                if float(box.conf[0]) > self.conf_threshold]
+
+        boxes = []
+        for x1, y1, x2, y2, conf, cls in pred[0].cpu().numpy():
+            boxes.append((x1, y1, x2, y2, float(conf), int(cls)))
         return boxes
     
     def compute_object_features(self, x1: float, y1: float, x2: float, y2: float, 
@@ -277,7 +319,7 @@ class ActionClassifier:
         # Pad or truncate sequence to SEQUENCE_LENGTH
         seq_len = sequence.shape[0]
         feature_dim = sequence.shape[1]
-        
+
         if seq_len < self.sequence_length:
             pad_size = self.sequence_length - seq_len
             padding = np.zeros((pad_size, feature_dim))
@@ -316,5 +358,4 @@ class ActionClassifier:
         """Cleanup resources"""
         if hasattr(self, 'pose'):
             self.pose.close()
-
 

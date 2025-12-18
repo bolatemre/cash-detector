@@ -180,6 +180,7 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
                         fps=record_fps,
                         codec=settings.video_codec,
                         pixelformat=settings.video_pixel_format,
+                        macro_block_size=1,
                         ffmpeg_params=[
                             '-crf', str(settings.video_crf),
                             '-preset', settings.video_preset
