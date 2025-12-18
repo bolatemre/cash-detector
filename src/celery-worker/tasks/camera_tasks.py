@@ -15,6 +15,7 @@ Usage:
 """
 
 import logging
+from typing import List, Dict
 import requests
 from datetime import datetime
 from celery_app import celery_app
@@ -34,8 +35,8 @@ logger = logging.getLogger(__name__)
     acks_late=False,  # Acknowledge immediately for long-lived stream tasks
     reject_on_worker_lost=True,
     autoretry_for=(CameraConnectionLostError, ConnectionError, requests.exceptions.RequestException),
+    max_retries=settings.celery_task_max_retries,
     retry_kwargs={
-        'max_retries': settings.celery_task_max_retries,
         'countdown': settings.celery_task_retry_backoff
     },
     retry_backoff=settings.celery_task_retry_backoff,
@@ -71,10 +72,12 @@ def start_process_camera_stream(self, camera_id: str):
         expected_fps = data.get('expected_fps')
         record_fps = data.get('record_fps')
         is_video = data.get('is_video', False)
+        buffersize = data.get('buffersize', 1)
         
         logger.info(f"Camera URL for {camera_id}: {mask_camera_url(camera_url)}")
         logger.info(f"Camera FPS settings - Expected: {expected_fps}, Record: {record_fps}")
         logger.info(f"Camera is_video: {is_video}")
+        logger.info(f"Camera buffersize: {buffersize}")
         
         if not camera_url:
             error_msg = f"Camera {camera_id} has no URL configured"
@@ -93,7 +96,8 @@ def start_process_camera_stream(self, camera_id: str):
                 camera_id=camera_id, 
                 expected_fps=expected_fps,
                 record_fps=record_fps,
-                is_video=is_video
+                is_video=is_video,
+                buffersize=buffersize
             )
             
             # If we reach here, it means the stream ended naturally or was stopped
@@ -131,6 +135,34 @@ def start_process_camera_stream(self, camera_id: str):
         logger.error(error_msg, exc_info=True)
         # Don't retry for unexpected errors - might be a bug
         raise
+
+
+@celery_app.task(
+    name='tasks.start_process_camera_stream_batch',
+    acks_late=False,
+    reject_on_worker_lost=True,
+)
+def start_process_camera_stream_batch(camera_ids: List[str]) -> Dict[str, str]:
+    """
+    Start processing for a list of cameras. Each camera is started as a separate task.
+    
+    Args:
+        camera_ids: List of camera identifiers
+        
+    Returns:
+        dict: Mapping camera_id -> created task_id
+    """
+    if not camera_ids:
+        logger.info("No camera IDs provided for batch start")
+        return {}
+
+    task_ids = {}
+    for cam_id in camera_ids:
+        # Spawn individual tasks synchronously (wait for each task to be dispatched)
+        start_process_camera_stream.apply(args=[cam_id])
+        logger.info(f"Finished task for camera {cam_id}")
+
+    return task_ids
 
 
 @celery_app.task(name='tasks.stop_process_camera_stream')

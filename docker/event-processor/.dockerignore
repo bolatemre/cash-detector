@@ -1,0 +1,14 @@
+# Logs
+logs/
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Tests
+tests/
+test/
+.pytest_cache/
+

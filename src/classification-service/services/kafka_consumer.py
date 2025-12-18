@@ -23,13 +23,17 @@ class VideoConsumer:
                 bootstrap_servers=settings.kafka_bootstrap_servers.split(','),
                 group_id=settings.kafka_group_id,
                 auto_offset_reset='earliest',
-                enable_auto_commit=True,
+                enable_auto_commit=False,  # Manual commit to ensure messages are only committed after successful processing
                 value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-                max_poll_records=10,
-                session_timeout_ms=30000,
-                heartbeat_interval_ms=10000
+                max_poll_records=settings.kafka_max_poll_records,  # Process one at a time to avoid timeout
+                max_poll_interval_ms=settings.kafka_max_poll_interval_ms,  # Allow up to 15 minutes for video processing
+                session_timeout_ms=settings.kafka_session_timeout_ms,
+                heartbeat_interval_ms=settings.kafka_heartbeat_interval_ms
             )
             logger.info(f"Connected to Kafka topic: {settings.kafka_topic}")
+            logger.info(f"Kafka consumer config: max_poll_interval_ms={settings.kafka_max_poll_interval_ms}ms, "
+                       f"max_poll_records={settings.kafka_max_poll_records}, "
+                       f"session_timeout_ms={settings.kafka_session_timeout_ms}ms")
             return True
         except KafkaError as e:
             logger.error(f"Failed to connect to Kafka: {e}")
@@ -61,10 +65,17 @@ class VideoConsumer:
                               f"from camera {video_data.get('camera_id', 'unknown')}")
                     
                     # Process the video using callback
+                    # This may take a long time (downloading, ML classification, etc.)
                     callback(video_data)
+                    
+                    # Commit offset only after successful processing
+                    # This ensures we don't lose messages if processing fails
+                    self.consumer.commit()
+                    logger.debug(f"Committed offset for message from camera {video_data.get('camera_id', 'unknown')}")
                     
                 except Exception as e:
                     logger.error(f"Error processing message: {e}", exc_info=True)
+                    # Don't commit on error - message will be retried
                     # Continue processing other messages
                     
         except KeyboardInterrupt:
