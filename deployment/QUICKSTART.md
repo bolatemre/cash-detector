@@ -23,6 +23,8 @@ You should see:
 - `event-processor.env`
 - `master-service.env`
 
+need to replace credential values in env files with real values
+
 ### 3. Build and Start Services
 
 #### Option A: Build and Run Locally
