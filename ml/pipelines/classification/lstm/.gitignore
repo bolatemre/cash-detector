@@ -1,0 +1,6 @@
+.venv
+
+src/*
+output/*
+
+notes.md
