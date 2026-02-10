@@ -1,12 +1,22 @@
-FROM python:3.11-slim
+# Multi-stage build to reduce final image size
+FROM python:3.11-slim as builder
 
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies for OpenCV, MediaPipe, and ML libraries
+# Install build dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+WORKDIR /app
+COPY docker/classification-service/requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Final stage - minimal runtime image
+FROM python:3.11-slim
+
+# Install only runtime dependencies (no build tools)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     libsm6 \
@@ -15,13 +25,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     ffmpeg \
     libavcodec-extra \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Copy requirements first for better caching
-COPY docker/classification-service/requirements.txt .
+# Copy installed packages from builder
+COPY --from=builder /root/.local /root/.local
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Make sure scripts in .local are usable
+ENV PATH=/root/.local/bin:$PATH
+
+# Set working directory
+WORKDIR /app
 
 # Copy source code
 COPY src/classification-service/ .

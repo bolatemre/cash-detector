@@ -58,7 +58,7 @@ class CameraConnectionLostError(Exception):
     """Raised when camera connection is lost (too many consecutive failed frame reads)"""
     pass
 
-def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20, is_video=False):
+def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20, is_video=False, buffersize=1):
     """
     Function that take video as input. When hands are detected, video recording is started until hands disappear + timeout seconds.
     Short videos with detected object are stored in defined directory.
@@ -69,15 +69,21 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
         expected_fps: Expected FPS for processing
         record_fps: FPS for video recording
         is_video: Boolean indicating if camera_url is a video file (True) or stream (False)
+        buffersize: Buffer size for video capture (minimize buffer to get latest frame, default=1)
     """
 
     max_failed_reads = settings.camera_max_failed_reads
     no_hand_timeout = settings.camera_no_hand_timeout
+    max_recording_duration = settings.video_max_duration
     
-    # Configure MediaPipe for better performance
-    hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3, min_tracking_confidence=0.1)
+    hands = mp_hands.Hands(
+        max_num_hands=2,
+        min_detection_confidence=0.3,
+        min_tracking_confidence=0.1
+    )
     recording = False
     no_hand_start = None
+    recording_start_time = None  # Track when recording started (for max duration check)
     out = None
     current_video_file = None  # Track current recording file path
     current_recording_started_at = None  # Track ISO timestamp of recording start
@@ -87,14 +93,19 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
     frame_count = 0
     start_time = time.time()
     last_log_time = start_time
-    
+    ffmpeg_options = (
+        f"err_detect|{settings.ffmpeg_err_detect};"
+        f"flags|{settings.ffmpeg_flags};"
+        f"error|{settings.ffmpeg_error_recognition}"
+    )
+    os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = ffmpeg_options
     # Create video capture object with optimized settings for streaming
     logger.info(f"Connecting to camera stream: {mask_camera_url(camera_url)}")
     cap = cv2.VideoCapture(camera_url, cv2.CAP_FFMPEG)
-    
-    # Configure video capture for RTSP/network streams
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffer to get latest frame
-    cap.set(cv2.CAP_PROP_FPS, expected_fps)  # Set expected FPS from camera settings
+
+    # Configure video capture properties
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, buffersize)
+    cap.set(cv2.CAP_PROP_FPS, expected_fps)
     
     if not cap.isOpened():
         error_msg = f"Failed to open camera stream: {mask_camera_url(camera_url)}"
@@ -119,6 +130,7 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
                     logger.error(error_msg)
                     raise CameraConnectionLostError(error_msg)
                 
+                time.sleep(0.01)
                 continue
             
             # Successfully read frame, reset counter
@@ -158,6 +170,7 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
                     os.makedirs(output_dir, exist_ok=True)
                     current_video_file = f"{output_dir}/recording_{camera_id}_{int(time.time())}.mp4"
                     current_recording_started_at = datetime.utcnow().isoformat() + 'Z'
+                    recording_start_time = time.time()  # Track when recording started
                     
                     # Configure video writer with compression settings
                     # CRF (Constant Rate Factor): 0-51, lower=better quality/larger file
@@ -167,6 +180,7 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
                         fps=record_fps,
                         codec=settings.video_codec,
                         pixelformat=settings.video_pixel_format,
+                        macro_block_size=1,
                         ffmpeg_params=[
                             '-crf', str(settings.video_crf),
                             '-preset', settings.video_preset
@@ -174,17 +188,36 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
                     )
                     recording = True
                     logger.info(f"Recording started for camera {camera_id}: {current_video_file} "
-                               f"(codec={settings.video_codec}, crf={settings.video_crf}, preset={settings.video_preset})")
+                               f"(codec={settings.video_codec}, crf={settings.video_crf}, preset={settings.video_preset}, "
+                               f"max_duration={max_recording_duration}s)")
             else:
                 if recording:
-                    if no_hand_start is None:
-                        no_hand_start = time.time()
-                    elif time.time() - no_hand_start > no_hand_timeout:
+                    should_stop = False
+                    stop_reason = None
+                    
+                    # Check if maximum recording duration has been reached (before no_hand_timeout check)
+                    if recording_start_time is not None:
+                        recording_duration = time.time() - recording_start_time
+                        if recording_duration >= max_recording_duration:
+                            should_stop = True
+                            stop_reason = f"max duration {max_recording_duration}s reached, recorded {recording_duration:.1f}s"
+                    
+                    # Check no_hand_timeout only if max_recording_duration hasn't been reached
+                    if not should_stop:
+                        if no_hand_start is None:
+                            no_hand_start = time.time()
+                        elif time.time() - no_hand_start > no_hand_timeout:
+                            should_stop = True
+                            stop_reason = "hands disappeared"
+                    
+                    # Stop recording if any condition is met
+                    if should_stop:
                         recording = False
                         out.close()
                         out = None
                         no_hand_start = None
-                        logger.info(f"Recording stopped for camera {camera_id}: {current_video_file}")
+                        recording_start_time = None
+                        logger.info(f"Recording stopped for camera {camera_id}: {current_video_file} ({stop_reason})")
                         
                         # Upload video to MinIO asynchronously (non-blocking)
                         if current_video_file:

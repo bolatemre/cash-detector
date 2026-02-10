@@ -4,7 +4,7 @@ from typing import Dict, Any
 from datetime import datetime
 from services.kafka_producer import send_classification_event
 from services.minio_service import MinioService
-from services.landmark_clf import ActionClassifier
+from services.run_yolo7 import YOLOv7ActionClassifier
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class ClassificationService:
         self.minio_service = MinioService()
         
         # Initialize the action classifier (mandatory - service won't work without it)
-        self.action_classifier = ActionClassifier()
+        self.action_classifier = YOLOv7ActionClassifier()
         self.logger.info("ActionClassifier initialized successfully")
         
     def process_video(self, video_data: Dict[str, Any]) -> None:

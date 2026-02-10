@@ -158,8 +158,8 @@ services:
       MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
-      MINIO_BUCKET: security-videos
-      MINIO_SUSPICIOUS_FOLDER: ${MINIO_SUSPICIOUS_FOLDER:-suspicious}
+      MINIO_BUCKET: ${EVENT_PROCESSOR_MINIO_BUCKET:-suspicious-videos}
+      MINIO_SUSPICIOUS_FOLDER: ${MINIO_SUSPICIOUS_FOLDER:-}
       MINIO_SECURE: "false"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       SERVER_TIMEZONE: ${SERVER_TIMEZONE:-UTC}
@@ -256,9 +256,12 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
-      MINIO_BUCKET: security-videos
+      MINIO_BUCKET: ${CELERY_WORKER_MINIO_BUCKET:-security-videos}
       MINIO_SECURE: "false"
       # Camera Processing Configuration
+      CAMERA_MAX_FAILED_READS: ${CAMERA_MAX_FAILED_READS:-30}
+      CAMERA_FPS_LOG_INTERVAL: ${CAMERA_FPS_LOG_INTERVAL:-1.0}
+      CAMERA_FPS_WARNING_THRESHOLD: ${CAMERA_FPS_WARNING_THRESHOLD:-1.0}
       CAMERA_NO_HAND_TIMEOUT: ${CAMERA_NO_HAND_TIMEOUT:-5.0}
       # Video Recording Configuration
       VIDEO_CODEC: ${VIDEO_CODEC:-libx264}
@@ -270,6 +273,12 @@ services:
       MEDIAPIPE_USE_CPU_ONLY: ${MEDIAPIPE_USE_CPU_ONLY:-"1"}
       CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-"-1"}
       OPENCV_OPENCL_RUNTIME: ${OPENCV_OPENCL_RUNTIME:-"disabled"}
+      VIDEO_MAX_DURATION: ${VIDEO_MAX_DURATION:-90.0}
+      # FFmpeg Decoder Configuration (for handling HEVC errors)
+      # Use "ignore_err" to suppress non-fatal HEVC warnings (POC errors, duplicate POC, etc.)
+      FFMPEG_ERR_DETECT: ${FFMPEG_ERR_DETECT:-ignore_err}
+      FFMPEG_FLAGS: ${FFMPEG_FLAGS:-+genpts+discardcorrupt+low_delay}
+      FFMPEG_ERROR_RECOGNITION: ${FFMPEG_ERROR_RECOGNITION:-careful}
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
@@ -313,6 +322,8 @@ services:
       POSE_MIN_TRACKING_CONFIDENCE: ${POSE_MIN_TRACKING_CONFIDENCE:-0.2}
       FEATURES_MIN_THRESHOLD: ${FEATURES_MIN_THRESHOLD:-5}
       CLASSIFICATION_CONFIDENCE_THRESHOLD: ${CLASSIFICATION_CONFIDENCE_THRESHOLD:-0.6}
+      YOLOV7_CONFIG_PATH: ${YOLOV7_CONFIG_PATH:-/app/yolov7/cfg/training/yolov7_tiny_2cl.yaml}
+      YOLOV7_DEVICE: ${YOLOV7_DEVICE:-cpu}
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
