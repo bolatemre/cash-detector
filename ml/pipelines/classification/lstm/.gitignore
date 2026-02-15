@@ -1,6 +1,14 @@
-.venv
+.venv_lstm
 
 src/*
 output/*
 
 notes.md
+
+__pycache__
+
+dataset_preparation/yolov7/cfg/*
+dataset_preparation/yolov7/models/*
+dataset_preparation/yolov7/utils/*
+
+.env

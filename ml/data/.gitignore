@@ -1,0 +1,16 @@
+.venv
+
+
+__pycache__
+
+trained_models/*
+
+ml_flow/ml_flow.db/*
+ml_flow/ml_runs/*
+
+databases/*
+
+processed/classification/*
+processed/object_detection/*
+raw/classification/*
+raw/object_detection/*
