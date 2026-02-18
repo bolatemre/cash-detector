@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     camera_fps_log_interval: float = 1.0  # Interval in seconds for FPS logging
     camera_fps_warning_threshold: float = 1.0  # FPS threshold below which warning is logged
     camera_no_hand_timeout: float = 5.0  # Seconds to wait after hands disappear before stopping recording
+
+    # MediaPipe Hands (trigger) configuration
+    # These parameters control the MediaPipe Hands detector used as a recording trigger.
+    mediapipe_hands_max_num_hands: int = 2
+    mediapipe_hands_min_detection_confidence: float = 0.5
+    mediapipe_hands_min_tracking_confidence: float = 0.3
     
     # Video Recording Configuration
     video_codec: str = "libx264"  # Video codec (libx264, libx265)
