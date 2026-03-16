@@ -75,6 +75,14 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
     max_failed_reads = settings.camera_max_failed_reads
     no_hand_timeout = settings.camera_no_hand_timeout
     max_recording_duration = settings.video_max_duration
+
+    logger.info(
+        "Camera %s: MediaPipe Hands settings: max_num_hands=%s, min_detection_confidence=%s, min_tracking_confidence=%s",
+        camera_id,
+        settings.mediapipe_hands_max_num_hands,
+        settings.mediapipe_hands_min_detection_confidence,
+        settings.mediapipe_hands_min_tracking_confidence,
+    )
     
     hands = mp_hands.Hands(
         max_num_hands=settings.mediapipe_hands_max_num_hands,

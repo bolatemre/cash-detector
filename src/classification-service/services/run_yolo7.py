@@ -3,12 +3,13 @@ Action Recognition Classifier using YOLOv7 and MediaPipe Pose
 
 ROI - area around body
 MediaPipe pose detects poseLandmarks
-When YOLO detect banknote near body (in hands), mediapipe tracks coordinates of shoulders, 
-wrists, hips and other body landmarks to detect if banknote is placed into the pocket or not
+When YOLO detects a banknote near body (in hands), MediaPipe tracks coordinates of shoulders,
+wrists, hips and other body landmarks to classify the action.
 
 Classification:
-- class 1: pocket (suspicious action)
 - class 0: cash_register (normal action)
+- class 1: alert (suspicious action)
+- class 2: change (normal action)
 """
 import torch
 import sys
@@ -21,7 +22,7 @@ from typing import Tuple, List, Optional, Dict
 # Add yolov7 directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'yolov7'))
 
-from utils.general import non_max_suppression
+from utils.general import non_max_suppression, scale_coords
 from utils.datasets import letterbox
 from models.yolo import Model
 
@@ -51,14 +52,6 @@ SELECTED_LANDMARKS = [
     mp_pose.PoseLandmark.RIGHT_THUMB,
     mp_pose.PoseLandmark.LEFT_HIP,
     mp_pose.PoseLandmark.RIGHT_HIP,
-    mp_pose.PoseLandmark.LEFT_KNEE,
-    mp_pose.PoseLandmark.RIGHT_KNEE,
-    mp_pose.PoseLandmark.LEFT_ANKLE,
-    mp_pose.PoseLandmark.RIGHT_ANKLE,
-    mp_pose.PoseLandmark.LEFT_HEEL,
-    mp_pose.PoseLandmark.RIGHT_HEEL,
-    mp_pose.PoseLandmark.LEFT_FOOT_INDEX,
-    mp_pose.PoseLandmark.RIGHT_FOOT_INDEX,
 ]
 
 
@@ -67,10 +60,16 @@ class YOLOv7ActionClassifier:
     Action Recognition Classifier for detecting suspicious actions using YOLOv7
     
     Uses custom YOLOv7 for banknote detection and MediaPipe Pose for body landmark tracking
-    to classify actions as either:
-    - 1: pocket (suspicious - money going into pocket)
+    to classify actions into one of:
     - 0: cash_register (normal - money going into register)
+    - 1: suspicious (suspicious - anomaly detected)
+    - 2: change (normal - change given)
     """
+    ACTION_CLASS_NAMES = {
+        0: "cash_register",
+        1: "suspicious",
+        2: "change",
+    }
     
     def __init__(self):
         """Initialize the classifier with models and configurations"""
@@ -158,7 +157,7 @@ class YOLOv7ActionClassifier:
             lm = np.array([
                 [
                     pose_results.pose_landmarks.landmark[landmark].x,
-                    pose_results.pose_landmarks.landmark[landmark].y                
+                    pose_results.pose_landmarks.landmark[landmark].y
                 ]
                 for landmark in SELECTED_LANDMARKS
             ]).flatten()
@@ -176,26 +175,25 @@ class YOLOv7ActionClassifier:
         Returns:
             List of detected objects (x1, y1, x2, y2, conf, cls)
         """
-        img = letterbox(frame, 640, stride=32)[0]      
-        img = img[:, :, ::-1].transpose(2, 0, 1)       
+        img = letterbox(frame, 640, stride=32)[0]
+        img = img[:, :, ::-1].transpose(2, 0, 1)
         img = np.ascontiguousarray(img)
-        img = torch.from_numpy(img).float()
+        img = torch.from_numpy(img).float().to(self.device)
         img /= 255.0
         img = img.unsqueeze(0)
-        img = img.to(self.device)
-
         with torch.no_grad():
             pred = self.yolo_model(img)[0]
-
-        # Apply Non-Max Suppression
         pred = non_max_suppression(pred, self.conf_threshold, 0.45)
+
         if pred[0] is None:
             return []
+        det = pred[0]
+        det[:, :4] = scale_coords(img.shape[2:], det[:, :4], frame.shape).round()
 
-        boxes = []
-        for x1, y1, x2, y2, conf, cls in pred[0].cpu().numpy():
-            boxes.append((x1, y1, x2, y2, float(conf), int(cls)))
-        return boxes
+        results = []
+        for *xyxy, conf, cls in det.cpu().numpy():
+            results.append((xyxy[0], xyxy[1], xyxy[2], xyxy[3], float(conf), int(cls)))
+        return results
     
     def compute_object_features(self, x1: float, y1: float, x2: float, y2: float, 
                                 frame_shape: Tuple[int, int, int]) -> np.ndarray:
@@ -241,9 +239,9 @@ class YOLOv7ActionClassifier:
             
         Returns:
             Dict containing:
-                - predicted_class: int (0=normal, 1=suspicious)
+                - predicted_class: int (0=cash_register, 1=suspicious, 2=change)
                 - confidence: float
-                - class_name: str ('normal' or 'suspicious')
+                - class_name: str ('cash_register' | 'suspicious' | 'change')
                 - features_collected: int
         """
         logger.info(f"Starting video classification: {video_path}")
@@ -308,7 +306,7 @@ class YOLOv7ActionClassifier:
             return {
                 'predicted_class': 0,
                 'confidence': 0.0,
-                'class_name': 'normal',
+                'class_name': "unknown",
                 'features_collected': len(all_features),
                 'message': 'Insufficient features collected for classification'
             }
@@ -331,16 +329,16 @@ class YOLOv7ActionClassifier:
         
         # Predict action
         predicted_class, confidence = self.predict_action(sequence)
-        class_name = "suspicious" if predicted_class == 1 else "normal"
+        class_name = self.ACTION_CLASS_NAMES.get(predicted_class, "unknown")
         
-        # If classification is suspicious but confidence is below threshold, treat as normal
-        if class_name == 'suspicious' and confidence < settings.classification_confidence_threshold:
+        # If classification is alert but confidence is below threshold, treat as cash_register
+        if predicted_class == 1 and confidence < settings.classification_confidence_threshold:
             logger.info(
-                f"Suspicious classification with low confidence ({confidence:.2f} < {settings.classification_confidence_threshold}), "
-                f"treating as normal (features: {len(all_features)})"
+                f"Alert classification with low confidence ({confidence:.2f} < {settings.classification_confidence_threshold}), "
+                f"treating as cash_register (features: {len(all_features)})"
             )
             predicted_class = 0
-            class_name = 'normal'
+            class_name = self.ACTION_CLASS_NAMES[0]
         
         result = {
             'predicted_class': predicted_class,
@@ -349,8 +347,10 @@ class YOLOv7ActionClassifier:
             'features_collected': len(all_features)
         }
         
-        logger.info(f"Classification result: {class_name} (class {predicted_class}) "
-                   f"with confidence {confidence:.2f}")
+        logger.info(
+            f"Classification result: {class_name} (class {predicted_class}) "
+            f"with confidence {confidence:.2f}"
+        )
         
         return result
     
