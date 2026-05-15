@@ -43,7 +43,7 @@ def send_classification_event(camera_id: str, event_type: str, video_url: str = 
     
     Args:
         camera_id: Camera identifier
-        event_type: Type of event ('suspicious' or 'normal')
+        event_type: Type of event ('cash_register' | 'suspicious' | 'change')
         video_url: Full URL to the video clip in MinIO (optional)
         detected_at: ISO timestamp when event was detected (optional, defaults to current time)
         

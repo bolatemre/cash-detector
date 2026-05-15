@@ -85,12 +85,12 @@ class ClassificationService:
             video_file_path: Path to downloaded video file
             
         Returns:
-            str: Classification result ('suspicious' or 'normal')
+            str: Classification result ('cash_register' | 'suspicious' | 'change')
         """
         try:
             result = self.action_classifier.classify_video(video_file_path)
             
-            class_name = result.get('class_name', 'normal')
+            class_name = result.get('class_name', 'unknown')
             confidence = result.get('confidence', 0.0)
             features_collected = result.get('features_collected', 0)
             
@@ -103,8 +103,8 @@ class ClassificationService:
             
         except Exception as e:
             self.logger.error(f"Error during video classification: {e}", exc_info=True)
-            # Return 'normal' as default in case of error to avoid false positives
-            return "normal"
+            # Return 'error' as default in case of error to avoid false alerts
+            return "error"
     
     def _send_classification_event(self, camera_id: str, event_type: str, video_path: str, bucket_name: str, detected_at: str = None) -> bool:
         """

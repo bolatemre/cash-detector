@@ -14,7 +14,7 @@ class Event(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     
     # Event classification
-    event_type = Column(String(50), nullable=False)  # e.g., "suspicious", "normal"
+    event_type = Column(String(50), nullable=False)  # e.g., "suspicious", "cash_register", "change")
     
     # Event metadata
     camera_id = Column(String(100), nullable=False)
