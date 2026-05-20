@@ -24,7 +24,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     libgomp1 \
     ffmpeg \
-    libavcodec-extra \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -34,21 +33,16 @@ COPY --from=builder /root/.local /root/.local
 # Make sure scripts in .local are usable
 ENV PATH=/root/.local/bin:$PATH
 
-# Set working directory
 WORKDIR /app
 
-# Copy source code
+COPY src/common /app/common
 COPY src/classification-service/ .
-
-# Create logs directory
+COPY src/yolov7 /app/yolov7
 RUN mkdir -p /app/logs
 
-# Set environment variables
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app:/app/yolov7
 ENV PYTHONUNBUFFERED=1
 
-# Expose port (if needed for health checks)
 EXPOSE 8001
 
-# Run the service
 CMD ["python", "main.py"]

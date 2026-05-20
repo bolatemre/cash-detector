@@ -1,18 +1,22 @@
+# torch/torchvision resolve from CPU wheel index; other packages from PyPI
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+
 # Kafka clients
 kafka-python==2.0.2
 confluent-kafka==2.3.0
 
 # ML/AI dependencies for classification
-torch==2.1.0
-torchvision==0.16.0
-tensorflow-cpu==2.18.1
-opencv-python-headless==4.8.1.78
-numpy==1.26.2
-pandas==2.1.4
-Pillow==10.2.0
-PyYAML==6.0.1
-tqdm==4.66.1
-matplotlib==3.8.2
+torch==2.9.1
+torchvision==0.24.1
+tensorflow-cpu==2.19.1
+opencv-python-headless==4.11.0.86
+numpy==1.26.4
+pandas==2.3.3
+Pillow==12.0.0
+PyYAML==6.0.3
+tqdm==4.67.1
+matplotlib==3.10.7
 seaborn==0.13.2
 mediapipe==0.10.21
 

@@ -20,6 +20,8 @@ ls -la *.env
 You should see:
 - `celery-worker.env`
 - `classification-service.env`
+- `tracking-service.env`
+- `pipeline-service.env`
 - `event-processor.env`
 - `master-service.env`
 
@@ -50,6 +52,8 @@ docker save be-master-service:latest | gzip > be-master-service.tar.gz
 docker save be-celery-worker:latest | gzip > be-celery-worker.tar.gz
 docker save be-event-processor:latest | gzip > be-event-processor.tar.gz
 docker save be-classification-service:latest | gzip > be-classification-service.tar.gz
+docker save be-tracking-service:latest | gzip > be-tracking-service.tar.gz
+docker save be-pipeline-service:latest | gzip > be-pipeline-service.tar.gz
 
 # 3. Transfer to server
 scp be-*.tar.gz user@server:/path-to-images-directory
@@ -67,6 +71,8 @@ docker load -i be-master-service.tar.gz
 docker load -i be-celery-worker.tar.gz
 docker load -i be-event-processor.tar.gz
 docker load -i be-classification-service.tar.gz
+docker load -i be-tracking-service.tar.gz
+docker load -i be-pipeline-service.tar.gz
 
 # 6. On server: Create database schemas
 cd /path-to-deployment-directory

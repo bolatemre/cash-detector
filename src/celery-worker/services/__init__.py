@@ -5,9 +5,10 @@ from .minio_service import (
     get_minio_client,
     upload_video_to_minio
 )
-from .kafka_service import (
+from .kafka_producer import (
+    CeleryKafkaProducer,
     get_kafka_producer,
-    send_video_uploaded_event
+    send_video_uploaded_event,
 )
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     'CameraConnectionLostError',
     'get_minio_client',
     'upload_video_to_minio',
+    'CeleryKafkaProducer',
     'get_kafka_producer',
     'send_video_uploaded_event',
 ]

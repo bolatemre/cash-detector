@@ -3,7 +3,7 @@ import time
 import logging
 from minio import Minio
 from minio.error import S3Error
-from .kafka_service import send_video_uploaded_event
+from .kafka_producer import send_video_uploaded_event
 
 logger = logging.getLogger(__name__)
 

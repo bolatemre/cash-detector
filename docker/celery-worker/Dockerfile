@@ -40,7 +40,10 @@ ENV PATH=/root/.local/bin:$PATH
 WORKDIR /app
 
 # Copy application code
+COPY src/common /app/common
 COPY src/celery-worker/ .
+
+ENV PYTHONPATH=/app
 
 # Create necessary directories
 RUN mkdir -p /app/logs /app/output/trigger/test

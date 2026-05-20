@@ -5,10 +5,8 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: security-postgres
-    environment:
-      POSTGRES_DB: security_system
-      POSTGRES_USER: security_user
-      POSTGRES_PASSWORD: security_password
+    env_file:
+      - ./docker/env/postgres.env
     ports:
       - "5432:5432"
     volumes:
@@ -56,9 +54,8 @@ services:
     ports:
       - "9000:9000"      # API port
       - "9001:9001"      # Console UI port
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    env_file:
+      - ./docker/env/minio.env
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
@@ -72,12 +69,14 @@ services:
   minio-init:
     image: minio/mc:latest
     container_name: security-minio-init
+    env_file:
+      - ./docker/env/minio.env
     depends_on:
       minio:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin123};
+      mc alias set myminio http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
       mc mb myminio/security-videos --ignore-existing;
       mc anonymous set download myminio/security-videos;
       echo 'MinIO bucket initialized successfully';
@@ -95,6 +94,12 @@ services:
       /bin/sh -c "
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic security-events --partitions 3 --replication-factor 1;
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic uploaded-videos --partitions 3 --replication-factor 1;
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-classification-requests --partitions 3 --replication-factor 1;
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-tracking-requests --partitions 3 --replication-factor 1;
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-stage-results --partitions 3 --replication-factor 1;
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-dead-letter --partitions 3 --replication-factor 1;
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic classification-dead-letter --partitions 3 --replication-factor 1;
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic tracking-dead-letter --partitions 3 --replication-factor 1;
       echo 'Kafka topics created successfully';
       exit 0;
       "
@@ -108,11 +113,8 @@ services:
         condition: service_healthy
     ports:
       - "8080:8080"
-    environment:
-      KAFKA_CLUSTERS_0_NAME: security-cluster
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
-      DYNAMIC_CONFIG_ENABLED: "true"
-      AUTH_TYPE: "DISABLED"
+    env_file:
+      - ./docker/env/kafka-ui.env
     restart: unless-stopped
 
   # Event Processor Service
@@ -128,41 +130,8 @@ services:
         condition: service_healthy
       master-service:
         condition: service_started
-    environment:
-      DATABASE_URL: postgresql://security_user:security_password@postgres:5432/security_system
-      DATABASE_SCHEMA: event_processor
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9093
-      KAFKA_TOPIC: security-events
-      KAFKA_GROUP_ID: event-processor-group
-      # Email configuration - set these in .env file
-      SMTP_HOST: ${SMTP_HOST}
-      SMTP_PORT: ${SMTP_PORT}
-      SMTP_USERNAME: ${SMTP_USERNAME}
-      SMTP_PASSWORD: ${SMTP_PASSWORD}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Security System}
-      # Notification configuration
-      NOTIFICATION_CHANNELS: ${NOTIFICATION_CHANNELS:-email}
-      # Master Service configuration
-      MASTER_SERVICE_URL: http://master-service:8000
-      # Keycloak configuration (required - for service-to-service auth)
-      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8080}
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-security-realm}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-event-processor}
-      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_EVENT_PROCESSOR_SECRET:-event-processor-secret}
-      # Email templates
-      EMAIL_TEMPLATE_DIR: ${EMAIL_TEMPLATE_DIR:-templates}
-      EMAIL_HTML_TEMPLATE: ${EMAIL_HTML_TEMPLATE:-email_suspicious_event.html}
-      # MinIO configuration
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
-      MINIO_BUCKET: ${EVENT_PROCESSOR_MINIO_BUCKET:-suspicious-videos}
-      MINIO_SUSPICIOUS_FOLDER: ${MINIO_SUSPICIOUS_FOLDER:-}
-      MINIO_SECURE: "false"
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      SERVER_TIMEZONE: ${SERVER_TIMEZONE:-UTC}
+    env_file:
+      - ./docker/env/event-processor.env
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
@@ -183,22 +152,8 @@ services:
         condition: service_healthy
     ports:
       - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql://security_user:security_password@postgres:5432/security_system
-      DATABASE_SCHEMA: master_service
-      API_HOST: 0.0.0.0
-      API_PORT: 8000
-      API_TITLE: "Master Service API"
-      API_VERSION: "1.0.0"
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
-      # Keycloak JWT validation for incoming requests (used by app security)
-      KEYCLOAK_SERVER_URL: ${KEYCLOAK_URL:-http://keycloak:8080}
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-security-realm}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-master-service}
-      KEYCLOAK_ALGORITHMS: ${KEYCLOAK_ALGORITHMS:-RS256}
-      # Keycloak configuration (required)
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    env_file:
+      - ./docker/env/master-service.env
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
@@ -233,61 +188,14 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
-    environment:
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
-      CELERY_WORKER_CONCURRENCY: ${CELERY_WORKER_CONCURRENCY:-8}
-      # Task Retry Configuration
-      # CELERY_TASK_MAX_RETRIES: Unlimited retries by default (set to number to limit)
-      CELERY_TASK_MAX_RETRIES: ${CELERY_TASK_MAX_RETRIES:-}
-      CELERY_TASK_RETRY_BACKOFF: ${CELERY_TASK_RETRY_BACKOFF:-300}
-      CELERY_TASK_RETRY_BACKOFF_MAX: ${CELERY_TASK_RETRY_BACKOFF_MAX:-300}
-      CELERY_TASK_RETRY_JITTER: ${CELERY_TASK_RETRY_JITTER:-false}
-      MASTER_SERVICE_URL: http://master-service:8000
-      # Keycloak configuration (required - for service-to-service auth)
-      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8080}
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-security-realm}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-celery-worker}
-      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CELERY_WORKER_SECRET:-celery-worker-secret}
-      # Kafka configuration
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9093
-      KAFKA_UPLOADED_VIDEOS_TOPIC: uploaded-videos
-      # MinIO configuration
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
-      MINIO_BUCKET: ${CELERY_WORKER_MINIO_BUCKET:-security-videos}
-      MINIO_SECURE: "false"
-      # Camera Processing Configuration
-      CAMERA_MAX_FAILED_READS: ${CAMERA_MAX_FAILED_READS:-30}
-      CAMERA_FPS_LOG_INTERVAL: ${CAMERA_FPS_LOG_INTERVAL:-1.0}
-      CAMERA_FPS_WARNING_THRESHOLD: ${CAMERA_FPS_WARNING_THRESHOLD:-1.0}
-      CAMERA_NO_HAND_TIMEOUT: ${CAMERA_NO_HAND_TIMEOUT:-5.0}
-      # Video Recording Configuration
-      VIDEO_CODEC: ${VIDEO_CODEC:-libx264}
-      VIDEO_PRESET: ${VIDEO_PRESET:-fast}
-      VIDEO_CRF: ${VIDEO_CRF:-28}
-      VIDEO_PIXEL_FORMAT: ${VIDEO_PIXEL_FORMAT:-yuv420p}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      MEDIAPIPE_HANDS_MAX_NUM_HANDS: ${MEDIAPIPE_HANDS_MAX_NUM_HANDS:-2}
-      MEDIAPIPE_HANDS_MIN_DETECTION_CONFIDENCE: ${MEDIAPIPE_HANDS_MIN_DETECTION_CONFIDENCE:-0.5}
-      MEDIAPIPE_HANDS_MIN_TRACKING_CONFIDENCE: ${MEDIAPIPE_HANDS_MIN_TRACKING_CONFIDENCE:-0.3}
-      MEDIAPIPE_DISABLE_GPU: ${MEDIAPIPE_DISABLE_GPU:-"1"}
-      MEDIAPIPE_USE_CPU_ONLY: ${MEDIAPIPE_USE_CPU_ONLY:-"1"}
-      CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-"-1"}
-      OPENCV_OPENCL_RUNTIME: ${OPENCV_OPENCL_RUNTIME:-"disabled"}
-      VIDEO_MAX_DURATION: ${VIDEO_MAX_DURATION:-90.0}
-      # FFmpeg Decoder Configuration (for handling HEVC errors)
-      # Use "ignore_err" to suppress non-fatal HEVC warnings (POC errors, duplicate POC, etc.)
-      FFMPEG_ERR_DETECT: ${FFMPEG_ERR_DETECT:-ignore_err}
-      FFMPEG_FLAGS: ${FFMPEG_FLAGS:-+genpts+discardcorrupt+low_delay}
-      FFMPEG_ERROR_RECOGNITION: ${FFMPEG_ERROR_RECOGNITION:-careful}
+    env_file:
+      - ./docker/env/celery-worker.env
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
       - ./videos:/app/videos
 
-  # Classification Service - Video Classification
+  # Classification Stage Service - HTTP API for stage execution
   classification-service:
     build:
       context: .
@@ -298,65 +206,59 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-    environment:
-      # Kafka configuration
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9093
-      KAFKA_TOPIC: uploaded-videos
-      KAFKA_GROUP_ID: classification-service-group
-      KAFKA_SECURITY_EVENTS_TOPIC: security-events
-      # MinIO configuration (for downloading videos)
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
-      MINIO_BUCKET: security-videos
-      MINIO_SECURE: "false"
-      # Local storage for downloaded videos
-      TEMP_VIDEO_DIR: /tmp/videos
-      # Service configuration
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # Classification Model Configuration
-      YOLO_MODEL_PATH: ${YOLO_MODEL_PATH:-/app/models/gpu_80_15_5.pt}
-      ACTION_MODEL_PATH: ${ACTION_MODEL_PATH:-/app/models/best_model_acc.keras}
-      OBJECT_CLASS_ID: ${OBJECT_CLASS_ID:-0}
-      CONF_THRESHOLD: ${CONF_THRESHOLD:-0.6}
-      TARGET_INTERVAL: ${TARGET_INTERVAL:-0.1}
-      SEQUENCE_LENGTH: ${SEQUENCE_LENGTH:-200}
-      POSE_MIN_DETECTION_CONFIDENCE: ${POSE_MIN_DETECTION_CONFIDENCE:-0.3}
-      POSE_MIN_TRACKING_CONFIDENCE: ${POSE_MIN_TRACKING_CONFIDENCE:-0.2}
-      FEATURES_MIN_THRESHOLD: ${FEATURES_MIN_THRESHOLD:-5}
-      CLASSIFICATION_CONFIDENCE_THRESHOLD: ${CLASSIFICATION_CONFIDENCE_THRESHOLD:-0.6}
-      YOLOV7_CONFIG_PATH: ${YOLOV7_CONFIG_PATH:-/app/yolov7/cfg/training/yolov7_tiny_2cl.yaml}
-      YOLOV7_DEVICE: ${YOLOV7_DEVICE:-cpu}
+    env_file:
+      - ./docker/env/classification-service.env
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
       - /tmp/videos:/tmp/videos
-      # Mount model directory (required for classification)
-      - ./models:/app/models:ro
+      - ./models:/mnt/models:ro
+
+  # Tracking Stage Service - HTTP API for stage execution
+  tracking-service:
+    build:
+      context: .
+      dockerfile: docker/tracking-service/Dockerfile
+    container_name: security-tracking-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    env_file:
+      - ./docker/env/tracking-service.env
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+      - /tmp/videos:/tmp/videos
+      - ./models:/mnt/models:ro
+
+  # Pipeline Service - calls classification and tracking stages
+  pipeline-service:
+    build:
+      context: .
+      dockerfile: docker/pipeline-service/Dockerfile
+    container_name: security-pipeline-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+      classification-service:
+        condition: service_started
+      tracking-service:
+        condition: service_started
+    env_file:
+      - ./docker/env/pipeline-service.env
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
 
   # Keycloak - Identity and Access Management
   keycloak:
     image: quay.io/keycloak/keycloak:26.4
     container_name: security-keycloak
     command: start-dev --import-realm
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/security_system
-      KC_DB_SCHEMA: keycloak
-      KC_DB_USERNAME: security_user
-      KC_DB_PASSWORD: security_password
-      # KC_HOSTNAME: keycloak
-      # KC_HOSTNAME_PORT: 8080
-      KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_HTTPS: "false"
-      KC_HTTP_ENABLED: "true"
-      KC_HEALTH_ENABLED: true
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
-      # Override client secrets with environment variables if provided
-      KEYCLOAK_MASTER_SERVICE_SECRET: ${KEYCLOAK_MASTER_SERVICE_SECRET:-master-service-secret}
-      KEYCLOAK_CELERY_WORKER_SECRET: ${KEYCLOAK_CELERY_WORKER_SECRET:-celery-worker-secret}
-      KEYCLOAK_EVENT_PROCESSOR_SECRET: ${KEYCLOAK_EVENT_PROCESSOR_SECRET:-event-processor-secret}
+    env_file:
+      - ./docker/env/keycloak.env
     ports:
       - "8088:8080"
       - "9088:9000"

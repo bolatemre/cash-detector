@@ -30,7 +30,10 @@ ENV PATH=/root/.local/bin:$PATH
 WORKDIR /app
 
 # Copy application code
+COPY src/common /app/common
 COPY src/event-processor/ .
+
+ENV PYTHONPATH=/app
 
 # Create logs directory
 RUN mkdir -p /app/logs

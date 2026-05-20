@@ -19,8 +19,20 @@ import numpy as np
 import logging
 from typing import Tuple, List, Optional, Dict
 
-# Add yolov7 directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'yolov7'))
+
+def _add_yolov7_root_to_path() -> None:
+    """YOLOv7 modules use `from utils.*`; their repo root must be on sys.path."""
+    service_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for candidate in (
+        os.path.join(service_root, "yolov7"),
+        os.path.join(os.path.dirname(service_root), "yolov7"),
+    ):
+        if os.path.isdir(os.path.join(candidate, "utils")) and candidate not in sys.path:
+            sys.path.insert(0, candidate)
+            return
+
+
+_add_yolov7_root_to_path()
 
 from utils.general import non_max_suppression, scale_coords
 from utils.datasets import letterbox
@@ -29,6 +41,8 @@ from models.yolo import Model
 import mediapipe as mp
 from tensorflow.keras.models import load_model
 from config.settings import settings
+
+_SERVICE_DIR = os.path.dirname(os.path.dirname(__file__))
 
 logger = logging.getLogger(__name__)
 
@@ -92,14 +106,12 @@ class YOLOv7ActionClassifier:
         # Load YOLOv7 model for banknote detection
         try:
             self.device = settings.yolov7_device
-            # Build absolute path for config file (relative to classification-service directory)
-            base_dir = os.path.dirname(os.path.dirname(__file__))  # classification-service directory
-            config_path = os.path.abspath(os.path.join(base_dir, settings.yolov7_config_path))
+            config_path = settings.yolov7_config_path
             
             self.yolo_model = Model(config_path).to(self.device)
             
             # Build absolute path for state file (relative to project root)
-            project_root = os.path.dirname(os.path.dirname(base_dir))  # project root
+            project_root = os.path.dirname(os.path.dirname(_SERVICE_DIR))  # project root
             state_path = os.path.abspath(os.path.join(project_root, settings.yolo_model_path))
             
             state = torch.load(state_path, map_location=self.device)

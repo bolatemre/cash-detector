@@ -1,8 +1,12 @@
 import logging
 import signal
 import sys
+
+from common.kafka_messages import PipelineStageEnvelope
+
 from services.kafka_consumer import VideoConsumer
 from services.classification_service import ClassificationService
+from services.kafka_producer import ClassificationKafkaProducer
 from config.settings import settings
 
 # Configure logging
@@ -32,20 +36,25 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
+    kafka_producer = None
     try:
-        # Initialize services
         logger.info("Initializing Kafka consumer...")
         consumer = VideoConsumer()
-        
+
+        logger.info("Initializing Kafka producer...")
+        kafka_producer = ClassificationKafkaProducer()
+
         logger.info("Initializing classification service (loading ML models)...")
-        classification_service = ClassificationService()
+        classification_service = ClassificationService(kafka_producer=kafka_producer)
         logger.info("Classification service initialized successfully")
-        
-        # Define callback function for processing videos
+
         def process_video_callback(video_data):
-            classification_service.process_video(video_data)
-        
-        # Start consuming video upload events
+            job = PipelineStageEnvelope.model_validate(video_data)
+            stage_result = classification_service.classify_video_payload(job.model_dump(mode="json"))
+            completion = job.with_completion("classification", stage_result)
+            if not kafka_producer.send_stage_result(completion):
+                raise RuntimeError("Failed to send classification stage result")
+
         logger.info("Starting video classification service...")
         consumer.consume_videos(process_video_callback)
         
@@ -57,6 +66,8 @@ def main():
         logger.error(f"Fatal error in classification service: {e}", exc_info=True)
         sys.exit(1)
     finally:
+        if kafka_producer:
+            kafka_producer.close()
         logger.info("Classification service stopped")
 
 
