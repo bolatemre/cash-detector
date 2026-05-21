@@ -160,53 +160,63 @@ class BanknoteTracker:
     def __init__(self):
         self.tracks = {}  # track_id -> tracking info
         self.banknote_positions = {}  # track_id -> last known position
-        self.position_threshold = settings.position_threshold
+        self.position_threshold = settings.position_threshold  # pixels threshold for position matching
+        self.id_remap = {}
         
     def merge_nearby_tracks(self, current_frame: np.ndarray) -> list[int]:
         """
         Merge tracks that are too close to each other to prevent duplication.
         """
         merged_ids = set()
-        track_ids = list(self.tracks.keys())        
+        track_ids = list(self.tracks.keys())
         for i, track_id1 in enumerate(track_ids):
             if track_id1 in merged_ids or track_id1 not in self.tracks:
-                continue                
+                continue
             pos1 = self.banknote_positions.get(track_id1)
             if pos1 is None:
-                continue                
+                continue
             for track_id2 in track_ids[i + 1:]:
                 if track_id2 in merged_ids or track_id2 not in self.tracks:
-                    continue                    
+                    continue
                 pos2 = self.banknote_positions.get(track_id2)
                 if pos2 is None:
-                    continue                
-                # Calculate Euclidean distance
-                dist = np.linalg.norm(np.array(pos1) - np.array(pos2))                
+                    continue
+                    # Calculate Euclidean distance
+                dist = np.linalg.norm(np.array(pos1) - np.array(pos2))
                 # Check if tracks are close enough and have similar behavior
                 if dist < self.position_threshold:
                     track1 = self.tracks[track_id1]
-                    track2 = self.tracks[track_id2]                    
-                    # Check if both tracks have similar zone behavior
-                    same_home_behavior = track1['was_in_home_zone'] == track2['was_in_home_zone']
-                    same_change_behavior = track1['was_in_change_zone'] == track2['was_in_change_zone']                    
-                    if same_home_behavior and same_change_behavior:
-                        # Keep older/smaller ID
-                        older_id = min(track_id1, track_id2)
-                        newer_id = max(track_id1, track_id2)                        
-                        # Merge metadata
-                        older_track = self.tracks[older_id]
-                        newer_track = self.tracks[newer_id]                        
-                        older_track['first_seen'] = min(
-                            older_track['first_seen'],
-                            newer_track['first_seen']
-                        )
-                        older_track['was_in_home_zone'] |= newer_track['was_in_home_zone']
-                        older_track['was_in_change_zone'] |= newer_track['was_in_change_zone']                        
-                        # Remove newer track
-                        del self.tracks[newer_id]
-                        self.banknote_positions.pop(newer_id, None)
-                        merged_ids.add(newer_id)                        
-                        logging.info(f"Merged tracks {newer_id} into {older_id} at frame {current_frame}")                        
+                    track2 = self.tracks[track_id2]
+                    # Use actual age, not numeric ID
+                    if track1['first_seen'] <= track2['first_seen']:
+                        older_id, newer_id = track_id1, track_id2
+                    else:
+                        older_id, newer_id = track_id2, track_id1
+                    older_track = self.tracks[older_id]
+                    newer_track = self.tracks[newer_id]
+                    # Merge state
+                    older_track['first_seen'] = min(
+                        older_track['first_seen'],
+                        newer_track['first_seen']
+                    )
+                    older_track['last_seen'] = max(
+                        older_track['last_seen'],
+                        newer_track['last_seen']
+                    )
+                    older_track['was_in_home_zone'] |= newer_track['was_in_home_zone']
+                    older_track['was_in_change_zone'] |= newer_track['was_in_change_zone']
+                    older_track['in_home_zone'] |= newer_track['in_home_zone']
+                    older_track['in_change_zone'] |= newer_track['in_change_zone']
+                    # Remap IDs
+                    self.id_remap[newer_id] = older_id
+                    # Remove duplicate
+                    del self.tracks[newer_id]
+                    self.banknote_positions.pop(newer_id, None)
+                    merged_ids.add(newer_id)
+                    logging.info(
+                        f"Merged tracks {newer_id} into {older_id} "
+                        f"at frame {current_frame}"
+                    )
         return merged_ids
         
 
@@ -221,6 +231,9 @@ class BanknoteTracker:
             home_zone: Whether the banknote is in home zone
             change_zone: Whether the banknote is in change zone
         """
+        """Update tracking information for a banknote"""
+        while track_id in self.id_remap:
+            track_id = self.id_remap[track_id]
         if track_id not in self.tracks:
             self.tracks[track_id] = {
                 'first_seen': frame_count,
@@ -230,22 +243,22 @@ class BanknoteTracker:
                 'was_in_home_zone': False,
                 'was_in_change_zone': False,
                 'violations': []
-            }        
+            }
         track = self.tracks[track_id]
-        track['last_seen'] = frame_count        
+        track['last_seen'] = frame_count
         # Store current position for merging logic
         center_x = (bbox[0] + bbox[2]) / 2
         center_y = (bbox[1] + bbox[3]) / 2
-        self.banknote_positions[track_id] = (center_x, center_y)        
+        self.banknote_positions[track_id] = (center_x, center_y)
         # Check current zones
         currently_in_home = home_zone is not None and is_inside(bbox, home_zone)
-        currently_in_change = is_in_change_zone(bbox, change_zone)        
+        currently_in_change = is_in_change_zone(bbox, change_zone)
         # Update zone states
         if currently_in_home:
             track['in_home_zone'] = True
             track['was_in_home_zone'] = True
         else:
-            track['in_home_zone'] = False            
+            track['in_home_zone'] = False
         if currently_in_change:
             track['in_change_zone'] = True
             track['was_in_change_zone'] = True
@@ -254,24 +267,27 @@ class BanknoteTracker:
     
 
     def classify_track(self, track_id: int, video_ended: bool = False) -> str:
-        """
-        Classify track based on the four scenarios.
-        """
+        """Classify track based on the four scenarios"""
+        while track_id in self.id_remap:
+            track_id = self.id_remap[track_id]
         if track_id not in self.tracks:
-            return "UNKNOWN"        
-        track = self.tracks[track_id]        
+            return "UNKNOWN"
+        track = self.tracks[track_id]
         # Scenario 1: banknotes appears on video and put into cash register (home_zone) -> ok
         if track['was_in_home_zone'] and not video_ended:
-            return "OK"        
+            return "OK"
         # Scenario 2: banknotes are taken from cash register and taken away but not in change zone -> alert
         if track['was_in_home_zone'] and not track['in_home_zone'] and not track['was_in_change_zone'] and video_ended:
-            return "ALERT"        
+            return "ALERT"
+        # Scenario 2: banknotes are taken from cash register and taken away but not in change zone -> alert
+        if track['was_in_home_zone'] and not track['was_in_change_zone'] and video_ended:
+            return "OK"
         # Scenario 3: banknotes are taken from cash register or they appear on video and go to change zone -> ok
         if track['was_in_change_zone']:
-            return "OK"        
+            return "OK"
         # Scenario 4: banknotes appears on video and do not come to cash register or change zone by the end of the video -> alert
         if video_ended and not track['was_in_home_zone'] and not track['was_in_change_zone']:
-            return "ALERT"        
+            return "ALERT"
         # Default case during tracking
         return "TRACKING"
 
