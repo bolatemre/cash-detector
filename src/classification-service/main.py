@@ -4,7 +4,7 @@ import sys
 
 from common.kafka_messages import PipelineStageEnvelope
 
-from services.kafka_consumer import VideoConsumer
+from services.kafka_consumer import ConsumerFatalError, VideoConsumer
 from services.classification_service import ClassificationService
 from services.kafka_producer import ClassificationKafkaProducer
 from config.settings import settings
@@ -37,6 +37,7 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
     
     kafka_producer = None
+    exit_code = 0
     try:
         logger.info("Initializing Kafka consumer...")
         consumer = VideoConsumer()
@@ -57,18 +58,23 @@ def main():
 
         logger.info("Starting video classification service...")
         consumer.consume_videos(process_video_callback)
-        
+
+    except ConsumerFatalError as e:
+        logger.error("Consumer failed fatally: %s", e, exc_info=True)
+        exit_code = 1
     except RuntimeError as e:
-        logger.error(f"CRITICAL: Service cannot start - {e}", exc_info=True)
+        logger.error("CRITICAL: Service cannot start - %s", e, exc_info=True)
         logger.error("Please ensure all required ML models are available")
-        sys.exit(1)
+        exit_code = 1
     except Exception as e:
-        logger.error(f"Fatal error in classification service: {e}", exc_info=True)
-        sys.exit(1)
+        logger.error("Fatal error in classification service: %s", e, exc_info=True)
+        exit_code = 1
     finally:
         if kafka_producer:
             kafka_producer.close()
         logger.info("Classification service stopped")
+
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

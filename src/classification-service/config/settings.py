@@ -14,9 +14,9 @@ class Settings(KafkaProducerConfigMixin):
     kafka_security_events_topic: str = "security-events"
     kafka_stage_results_topic: str = "pipeline-stage-results"
     
-    # Kafka Consumer Configuration (for handling long-running video processing)
-    kafka_max_poll_interval_ms: int = 900000  # 15 minutes - time allowed between poll() calls
-    kafka_max_poll_records: int = 1  # Process one video at a time to avoid timeout
+    # Kafka Consumer Configuration
+    kafka_max_poll_interval_ms: int = 900000  # Safety net; poll loop stays active during worker processing
+    kafka_max_poll_records: int = 1  # One message in-flight at a time
     kafka_session_timeout_ms: int = 45000  # 45 seconds - time to detect consumer failure
     kafka_heartbeat_interval_ms: int = 15000  # 15 seconds - heartbeat frequency
     kafka_poll_timeout_ms: int = 1000
