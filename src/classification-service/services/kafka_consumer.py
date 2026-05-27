@@ -1,15 +1,12 @@
 import json
 import logging
 import time
-from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Callable
 
 from confluent_kafka import Producer
-from kafka import KafkaConsumer, TopicPartition
+from kafka import KafkaConsumer
 from kafka.errors import CommitFailedError
-from kafka.structs import OffsetAndMetadata
 
 from config.settings import settings
 
@@ -18,14 +15,6 @@ logger = logging.getLogger(__name__)
 
 class ConsumerFatalError(Exception):
     """Unrecoverable consumer error; service should exit with non-zero code."""
-
-
-@dataclass
-class InFlightTask:
-    future: Future
-    message: object
-    retry_key: tuple[str, int, int]
-    attempts: int = 0
 
 
 class VideoConsumer:
@@ -70,51 +59,20 @@ class VideoConsumer:
 
     def consume_videos(self, callback: Callable):
         """
-        Consume video upload events using a task queue pattern.
+        Consume video upload events one at a time.
 
-        The poll loop stays responsive while a worker thread runs long-running
-        classification. Offsets are committed only after successful processing.
+        Classification runs synchronously in the poll thread. Heartbeats are
+        sent by kafka-python's background thread; max_poll_interval_ms allows
+        long-running jobs between poll() calls.
         """
         if not self.consumer and not self.connect():
             raise ConsumerFatalError("Cannot start consuming - connection failed")
 
         self.running = True
-        logger.info("Starting to consume video upload events (task queue pattern)...")
-
-        executor: Optional[ThreadPoolExecutor] = None
-        in_flight: Optional[InFlightTask] = None
+        logger.info("Starting to consume video upload events...")
 
         try:
-            executor = ThreadPoolExecutor(
-                max_workers=1,
-                thread_name_prefix="classification-worker",
-            )
-            in_flight = None
-
             while self.running:
-                if in_flight is not None:
-                    if not in_flight.future.done():
-                        self.consumer.poll(timeout_ms=settings.kafka_poll_timeout_ms)
-                        continue
-
-                    try:
-                        in_flight.future.result()
-                    except Exception as e:
-                        in_flight = self._handle_task_failure(in_flight, e, callback, executor)
-                        continue
-
-                    try:
-                        self._commit_message(in_flight.message)
-                    except CommitFailedError as e:
-                        raise ConsumerFatalError(
-                            "Failed to commit offset after successful processing"
-                        ) from e
-
-                    self.retry_counts.pop(in_flight.retry_key, None)
-                    self._resume_all()
-                    in_flight = None
-                    continue
-
                 records = self.consumer.poll(
                     timeout_ms=settings.kafka_poll_timeout_ms,
                     max_records=settings.kafka_max_poll_records,
@@ -129,20 +87,15 @@ class VideoConsumer:
 
                         video_data = message.value
                         logger.info(
-                            "Received stage request: %s from camera %s",
+                            "Received stage request: %s from camera %s "
+                            "(topic=%s partition=%s offset=%s)",
                             video_data.get("event_type", "unknown"),
                             video_data.get("camera_id", "unknown"),
+                            message.topic,
+                            message.partition,
+                            message.offset,
                         )
-                        retry_key = (message.topic, message.partition, message.offset)
-                        self._pause_all()
-                        in_flight = InFlightTask(
-                            future=executor.submit(callback, video_data),
-                            message=message,
-                            retry_key=retry_key,
-                        )
-                        break
-                    if in_flight is not None:
-                        break
+                        self._process_message(message, callback)
 
         except SystemExit:
             logger.info("Shutdown signal received, stopping consumer loop")
@@ -152,82 +105,55 @@ class VideoConsumer:
             logger.error("Error in consumer loop: %s", e, exc_info=True)
             raise ConsumerFatalError("Consumer loop terminated unexpectedly") from e
         finally:
-            if in_flight is not None and executor is not None:
-                logger.info("Waiting for in-flight classification task to finish...")
-                try:
-                    in_flight.future.result()
-                except Exception:
-                    logger.warning("In-flight task failed during shutdown", exc_info=True)
-            if executor is not None:
-                executor.shutdown(wait=True)
             self.close()
 
-    def _handle_task_failure(
-        self,
-        task: InFlightTask,
-        error: Exception,
-        callback: Callable,
-        executor: ThreadPoolExecutor,
-    ) -> Optional[InFlightTask]:
-        attempts = task.attempts + 1
-        task.attempts = attempts
-        self.retry_counts[task.retry_key] = attempts
-
-        if attempts >= settings.kafka_processing_max_retries:
-            logger.error(
-                "Message failed after %s retries, sending to DLQ and committing offset",
-                attempts,
-            )
-            self._send_to_dlq(task.message, error, attempts)
+    def _process_message(self, message, callback: Callable) -> None:
+        retry_key = (message.topic, message.partition, message.offset)
+        while self.running:
             try:
-                self._commit_message(task.message)
-            except CommitFailedError as commit_error:
-                raise ConsumerFatalError(
-                    "Failed to commit offset after DLQ handoff"
-                ) from commit_error
-            self.retry_counts.pop(task.retry_key, None)
-            self._resume_all()
-            return None
+                callback(message.value)
+                self._commit_message()
+                self.retry_counts.pop(retry_key, None)
+                return
+            except Exception as e:
+                attempts = self.retry_counts.get(retry_key, 0) + 1
+                self.retry_counts[retry_key] = attempts
 
-        logger.warning(
-            "Message processing failed (attempt %s/%s), retrying after %.1fs: %s",
-            attempts,
-            settings.kafka_processing_max_retries,
-            settings.kafka_processing_retry_backoff_seconds,
-            error,
-        )
-        time.sleep(settings.kafka_processing_retry_backoff_seconds)
-        return InFlightTask(
-            future=executor.submit(callback, task.message.value),
-            message=task.message,
-            retry_key=task.retry_key,
-            attempts=attempts,
-        )
+                if attempts >= settings.kafka_processing_max_retries:
+                    logger.error(
+                        "Message failed after %s retries, sending to DLQ and committing offset",
+                        attempts,
+                    )
+                    self._send_to_dlq(message, e, attempts)
+                    try:
+                        self._commit_message()
+                    except CommitFailedError as commit_error:
+                        raise ConsumerFatalError(
+                            "Failed to commit offset after DLQ handoff"
+                        ) from commit_error
+                    self.retry_counts.pop(retry_key, None)
+                    return
 
-    def _topic_partition(self, message) -> TopicPartition:
-        return TopicPartition(message.topic, message.partition)
+                logger.warning(
+                    "Message processing failed (attempt %s/%s), retrying after %.1fs: %s",
+                    attempts,
+                    settings.kafka_processing_max_retries,
+                    settings.kafka_processing_retry_backoff_seconds,
+                    e,
+                )
+                time.sleep(settings.kafka_processing_retry_backoff_seconds)
 
-    def _pause_all(self) -> None:
-        for tp in self.consumer.assignment():
-            self.consumer.pause(tp)
-
-    def _resume_all(self) -> None:
-        for tp in self.consumer.assignment():
-            self.consumer.resume(tp)
-
-    def _commit_message(self, message) -> None:
-        tp = self._topic_partition(message)
-        offsets = {tp: OffsetAndMetadata(message.offset + 1, "")}
+    def _commit_message(self) -> None:
         for attempt in range(2):
             try:
-                self.consumer.commit(offsets)
+                self.consumer.commit()
                 return
             except CommitFailedError as e:
                 if attempt == 0:
                     logger.warning("Commit failed, polling to rejoin group before retry: %s", e)
                     self.consumer.poll(timeout_ms=settings.kafka_poll_timeout_ms)
                 else:
-                    raise
+                    raise ConsumerFatalError("Failed to commit offset after processing") from e
 
     def close(self):
         """Close Kafka consumer connection."""
