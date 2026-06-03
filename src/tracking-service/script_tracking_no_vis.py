@@ -355,7 +355,7 @@ def object_by_zones(video_source: str | Path) -> dict:
         if not ret:
             break
         frame_count += 1
-        if frame_count % frame_interval != 0:
+        if not settings.process_all_frames and frame_count % frame_interval != 0:
             continue            
         detections = detect_objects(frame, model)
         home_zone = update_home_zone(detections, home_zone)        

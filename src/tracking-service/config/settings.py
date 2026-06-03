@@ -42,6 +42,7 @@ class Settings(KafkaProducerConfigMixin):
     conf_threshold: float = 0.45
     iou_threshold: float = 0.45
     target_interval: float = 0.1
+    process_all_frames: bool = False  # When True, skip frame_interval sampling and process every frame
     yolo_img_size: int = 640
     class_names: list[str] = Field(default_factory=lambda: ["banknote", "cash register"])
     position_threshold: int = 100

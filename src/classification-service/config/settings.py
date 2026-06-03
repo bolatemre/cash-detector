@@ -49,6 +49,7 @@ class Settings(KafkaProducerConfigMixin):
     object_class_id: int = 0  # Banknote class ID
     conf_threshold: float = 0.2  # YOLO confidence threshold
     target_interval: float = 0.1  # Frame sampling interval (seconds)
+    process_all_frames: bool = False  # When True, skip frame_interval sampling and process every frame
     sequence_length: int = 200  # Number of frames for sequence
     pose_min_detection_confidence: float = 0.3
     pose_min_tracking_confidence: float = 0.2

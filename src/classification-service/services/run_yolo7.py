@@ -99,6 +99,7 @@ class YOLOv7ActionClassifier:
             f"object_class_id={settings.object_class_id}, "
             f"conf_threshold={settings.conf_threshold}, "
             f"target_interval={settings.target_interval}, "
+            f"process_all_frames={settings.process_all_frames}, "
             f"sequence_length={settings.sequence_length}, "
             f"features_min_threshold={settings.features_min_threshold}"
         )
@@ -281,7 +282,7 @@ class YOLOv7ActionClassifier:
                     break
                 
                 frame_count += 1
-                if frame_count % frame_interval != 0:
+                if not settings.process_all_frames and frame_count % frame_interval != 0:
                     continue
                 
                 # Object Detection
