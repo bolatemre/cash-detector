@@ -21,6 +21,8 @@ class PipelineService:
         self.kafka_producer = kafka_producer
         self.minio_service = minio_service or MinioService()
         self.alert_labels = {label.strip().lower() for label in settings.alert_labels.split(",") if label.strip()}
+        self.classification_confidence_threshold = settings.classification_confidence_threshold
+        self.unknown_label = settings.unknown_label
         self.stage_order = [stage.strip().lower() for stage in settings.stage_order.split(",") if stage.strip()]
         self._validate_stage_order()
 
@@ -54,7 +56,6 @@ class PipelineService:
         envelope = PipelineStageEnvelope.model_validate(event_data)
         try:
             stage_name, _ = envelope.require_completion()
-            event_type = envelope.completion_event_type()
         except ValueError as e:
             raise RuntimeError(f"Invalid stage completion: {e}: {event_data}") from e
 
@@ -70,18 +71,20 @@ class PipelineService:
             )
             self._tag_stage_on_video(envelope, stage_name, stage_results[stage_name])
 
-        if self._is_alert(event_type) and envelope.has_next_stage():
-            next_stage = envelope.next_stage()
-            assert next_stage is not None
+        decision = self._resolve_decision(envelope=envelope, stage_results=stage_results)
+        if decision["action"] == "next":
+            next_stage = decision["next_stage"]
             next_envelope = envelope.for_next_stage(stage_results)
             self._send_to_stage(next_stage, next_envelope)
             logger.info(
-                "Alert from stage '%s' -> queued next stage '%s' for correlation_id=%s",
-                stage_name,
+                "Queued next stage '%s' for correlation_id=%s (reason=%s)",
                 next_stage,
                 envelope.correlation_id,
+                decision["reason"],
             )
             return
+
+        event_type = decision["event_type"]
 
         bucket_name = envelope.bucket_name or settings.minio_bucket
         video_url = f"{settings.minio_public_url}/{bucket_name}/{envelope.video_path}"
@@ -98,11 +101,161 @@ class PipelineService:
             return
 
         logger.info(
-            "Pipeline completed correlation_id=%s final_event=%s stage_results=%s",
+            "Pipeline completed correlation_id=%s final_event=%s reason=%s stage_results=%s",
             envelope.correlation_id,
             event_type,
+            decision["reason"],
             stage_results,
         )
+
+    def _resolve_decision(
+        self,
+        envelope: PipelineStageEnvelope,
+        stage_results: dict[StageName, dict[str, Any]],
+    ) -> dict[str, Any]:
+        first_stage = envelope.stage_order[0]
+        if first_stage == "classification":
+            return self._resolve_classification_first_decision(envelope, stage_results)
+        return self._resolve_tracking_first_decision(envelope, stage_results)
+
+    def _resolve_classification_first_decision(
+        self,
+        envelope: PipelineStageEnvelope,
+        stage_results: dict[StageName, dict[str, Any]],
+    ) -> dict[str, Any]:
+        classification = stage_results.get("classification")
+        tracking = stage_results.get("tracking")
+
+        if not classification:
+            return self._final_event(envelope.completion_event_type(), "no_classification_payload")
+
+        classification_class = self._classification_class(classification)
+        confidence = self._classification_confidence(classification)
+
+        if self._is_classification_unknown(classification, classification_class):
+            return self._final_event(self.unknown_label, "classification_not_enough_frames")
+
+        if tracking is None:
+            if (
+                confidence > self.classification_confidence_threshold
+                and classification_class == 1
+                and envelope.has_next_stage()
+            ):
+                next_stage = envelope.next_stage()
+                return self._next_stage(next_stage, "classification_alert_high_confidence")
+
+            if confidence > self.classification_confidence_threshold and classification_class in (0, 2):
+                return self._final_event(classification.get("event_type", self.unknown_label), "classification_confident_normal")
+
+            if confidence <= self.classification_confidence_threshold and envelope.has_next_stage():
+                next_stage = envelope.next_stage()
+                return self._next_stage(next_stage, "classification_low_confidence_requires_tracking")
+
+            return self._final_event(classification.get("event_type", self.unknown_label), "classification_terminal_fallback")
+
+        tracking_class = self._tracking_class(tracking)
+
+        if confidence > self.classification_confidence_threshold and classification_class == 1 and tracking_class == 0:
+            return self._final_event(classification.get("event_type", self.unknown_label), "classification_overrides_tracking")
+
+        if confidence > self.classification_confidence_threshold and classification_class == 1 and tracking_class == 1:
+            return self._final_event(classification.get("event_type", self.unknown_label), "consensus_alert")
+
+        if confidence <= self.classification_confidence_threshold:
+            if classification_class == tracking_class:
+                return self._final_event(tracking.get("event_type", self.unknown_label), "consensus_low_confidence")
+            return self._final_event(tracking.get("event_type", self.unknown_label), "tracking_overrides_low_confidence")
+
+        return self._final_event(classification.get("event_type", self.unknown_label), "classification_terminal_fallback")
+
+    def _resolve_tracking_first_decision(
+        self,
+        envelope: PipelineStageEnvelope,
+        stage_results: dict[StageName, dict[str, Any]],
+    ) -> dict[str, Any]:
+        tracking = stage_results.get("tracking")
+        classification = stage_results.get("classification")
+
+        if not tracking:
+            return self._final_event(envelope.completion_event_type(), "no_tracking_payload")
+
+        tracking_class = self._tracking_class(tracking)
+
+        if classification is None:
+            if envelope.has_next_stage():
+                next_stage = envelope.next_stage()
+                return self._next_stage(next_stage, "tracking_completed_requires_classification")
+            return self._final_event(tracking.get("event_type", self.unknown_label), "tracking_terminal_without_classification")
+
+        classification_class = self._classification_class(classification)
+        confidence = self._classification_confidence(classification)
+        confidence_high = confidence > self.classification_confidence_threshold
+
+        if self._is_classification_unknown(classification, classification_class):
+            return self._final_event(self.unknown_label, "classification_not_enough_frames")
+
+        if classification_class in (0, 2):
+            if confidence_high:
+                if tracking_class == 1:
+                    return self._final_event(classification.get("event_type", self.unknown_label), "classification_overrides_alert_tracking")
+                return self._final_event(classification.get("event_type", self.unknown_label), "consensus_normal_high_confidence")
+            if tracking_class == 1:
+                return self._final_event(tracking.get("event_type", self.unknown_label), "tracking_overrides_low_confidence")
+            return self._final_event(classification.get("event_type", self.unknown_label), "consensus_normal_low_confidence")
+
+        if classification_class == 1:
+            if confidence_high:
+                if tracking_class == 1:
+                    return self._final_event(classification.get("event_type", self.unknown_label), "consensus_alert_high_confidence")
+                return self._final_event(classification.get("event_type", self.unknown_label), "classification_overrides_tracking_high_confidence")
+            if tracking_class == 1:
+                return self._final_event(tracking.get("event_type", self.unknown_label), "tracking_alert_low_confidence")
+            return self._final_event(tracking.get("event_type", self.unknown_label), "consensus_normal_low_confidence")
+
+        return self._final_event(self.unknown_label, "unsupported_classification_class")
+
+    def _classification_class(self, classification_result: dict[str, Any]) -> int:
+        value = classification_result.get("predicted_class")
+        if isinstance(value, bool):
+            return -1
+        if isinstance(value, int):
+            return value
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            event_type = str(classification_result.get("event_type", "")).lower()
+            if event_type in self.alert_labels:
+                return 1
+            if event_type == "change":
+                return 2
+            if event_type:
+                return 0
+            return -1
+
+    def _classification_confidence(self, classification_result: dict[str, Any]) -> float:
+        value = classification_result.get("confidence", 0.0)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _tracking_class(self, tracking_result: dict[str, Any]) -> int:
+        event_type = str(tracking_result.get("event_type", "")).lower()
+        return 1 if self._is_alert(event_type) else 0
+
+    def _is_classification_unknown(self, classification_result: dict[str, Any], classification_class: int) -> bool:
+        event_type = str(classification_result.get("event_type", "")).lower()
+        return event_type == self.unknown_label or classification_class not in (0, 1, 2)
+
+    @staticmethod
+    def _next_stage(next_stage: str | None, reason: str) -> dict[str, Any]:
+        if not next_stage:
+            return {"action": "final", "event_type": "unknown", "reason": "missing_next_stage"}
+        return {"action": "next", "next_stage": next_stage, "reason": reason}
+
+    @staticmethod
+    def _final_event(event_type: str, reason: str) -> dict[str, Any]:
+        return {"action": "final", "event_type": event_type, "reason": reason}
 
     def _is_alert(self, event_type: str) -> bool:
         return (event_type or "").lower() in self.alert_labels

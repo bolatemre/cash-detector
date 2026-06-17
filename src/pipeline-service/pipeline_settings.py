@@ -34,6 +34,8 @@ class PipelineSettings(KafkaProducerConfigMixin):
     # Pipeline behavior
     stage_order: str = "classification,tracking"
     alert_labels: str = "suspicious,alert"
+    classification_confidence_threshold: float = 0.8
+    unknown_label: str = "unknown"
     service_name: str = "pipeline-service"
     service_version: str = "1.0.0"
     log_level: str = "INFO"

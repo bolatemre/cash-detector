@@ -378,7 +378,7 @@ def object_by_zones(video_source: str | Path) -> dict:
     oks, alerts, final_status = generate_final_report(banknote_tracker)
     cap.release()
     return {
-        "event_type": "suspicious" if final_status == "ALERT" else "cash_register",
+        "event_type": "suspicious" if final_status == "ALERT" else "ALL CLEAR",
         "final_status": final_status,
         "alerts": alerts,
         "oks": oks,
