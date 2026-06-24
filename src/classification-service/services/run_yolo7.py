@@ -39,8 +39,14 @@ from utils.datasets import letterbox
 from models.yolo import Model
 
 import mediapipe as mp
-from tensorflow.keras.models import load_model
 from config.settings import settings
+
+import tensorflow as tf
+
+if settings.tensorflow_device.lower() == "cpu":
+    tf.config.set_visible_devices([], "GPU")
+
+from tensorflow.keras.models import load_model
 
 _SERVICE_DIR = os.path.dirname(os.path.dirname(__file__))
 
@@ -101,7 +107,9 @@ class YOLOv7ActionClassifier:
             f"target_interval={settings.target_interval}, "
             f"process_all_frames={settings.process_all_frames}, "
             f"sequence_length={settings.sequence_length}, "
-            f"features_min_threshold={settings.features_min_threshold}"
+            f"features_min_threshold={settings.features_min_threshold}, "
+            f"yolov7_device={settings.yolov7_device}, "
+            f"tensorflow_device={settings.tensorflow_device}"
         )
         
         # Load YOLOv7 model for banknote detection

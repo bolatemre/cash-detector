@@ -59,6 +59,7 @@ class Settings(KafkaProducerConfigMixin):
     # YOLOv7 Custom Model Configuration
     yolov7_config_path: str = "yolov7/cfg/training/yolov7_tiny_2cl.yaml"  # Under service dir (/app) or sibling src/yolov7 locally
     yolov7_device: str = "cpu"  # Device for YOLOv7 model (cpu/cuda)
+    tensorflow_device: str = "cpu"  # Device for Keras action model (cpu/cuda)
     
     model_config = SettingsConfigDict(
         env_file=".env",
