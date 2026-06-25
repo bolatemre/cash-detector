@@ -169,6 +169,9 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
             results = hands.process(rgb_frame)
             hands_detected = results.multi_hand_landmarks is not None
 
+            should_stop = False
+            stop_reason = None
+
             if hands_detected:
                 # Reset timeout countdown once hands are detected again
                 no_hand_start = None
@@ -198,46 +201,38 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
                     logger.info(f"Recording started for camera {camera_id}: {current_video_file} "
                                f"(codec={settings.video_codec}, crf={settings.video_crf}, preset={settings.video_preset}, "
                                f"max_duration={max_recording_duration}s)")
-            else:
-                if recording:
-                    should_stop = False
-                    stop_reason = None
-                    
-                    # Check if maximum recording duration has been reached (before no_hand_timeout check)
-                    if recording_start_time is not None:
-                        recording_duration = time.time() - recording_start_time
-                        if recording_duration >= max_recording_duration:
-                            should_stop = True
-                            stop_reason = f"max duration {max_recording_duration}s reached, recorded {recording_duration:.1f}s"
-                    
-                    # Check no_hand_timeout only if max_recording_duration hasn't been reached
-                    if not should_stop:
-                        if no_hand_start is None:
-                            no_hand_start = time.time()
-                        elif time.time() - no_hand_start > no_hand_timeout:
-                            should_stop = True
-                            stop_reason = "hands disappeared"
-                    
-                    # Stop recording if any condition is met
-                    if should_stop:
-                        recording = False
-                        out.close()
-                        out = None
-                        no_hand_start = None
-                        recording_start_time = None
-                        logger.info(f"Recording stopped for camera {camera_id}: {current_video_file} ({stop_reason})")
-                        
-                        # Upload video to MinIO asynchronously (non-blocking)
-                        if current_video_file:
-                            upload_thread = threading.Thread(
-                                target=upload_video_to_minio,
-                                args=(current_video_file, camera_id, current_recording_started_at),
-                                daemon=True
-                            )
-                            upload_thread.start()
-                            logger.info(f"Started async upload for: {current_video_file}")
-                            current_video_file = None
-                            current_recording_started_at = None
+            elif recording:
+                if no_hand_start is None:
+                    no_hand_start = time.time()
+                elif time.time() - no_hand_start > no_hand_timeout:
+                    should_stop = True
+                    stop_reason = "hands disappeared"
+
+            if recording and recording_start_time is not None:
+                recording_duration = time.time() - recording_start_time
+                if recording_duration >= max_recording_duration:
+                    should_stop = True
+                    stop_reason = f"max duration {max_recording_duration}s reached, recorded {recording_duration:.1f}s"
+
+            if should_stop:
+                recording = False
+                out.close()
+                out = None
+                no_hand_start = None
+                recording_start_time = None
+                logger.info(f"Recording stopped for camera {camera_id}: {current_video_file} ({stop_reason})")
+
+                # Upload video to MinIO asynchronously (non-blocking)
+                if current_video_file:
+                    upload_thread = threading.Thread(
+                        target=upload_video_to_minio,
+                        args=(current_video_file, camera_id, current_recording_started_at),
+                        daemon=True
+                    )
+                    upload_thread.start()
+                    logger.info(f"Started async upload for: {current_video_file}")
+                    current_video_file = None
+                    current_recording_started_at = None
             
             if recording and out:
                 out.append_data(rgb_frame)
