@@ -25,7 +25,13 @@ def get_minio_client():
     return client
 
 
-def upload_video_to_minio(local_file_path, camera_id, recording_started_at=None):
+def upload_video_to_minio(
+    local_file_path,
+    camera_id,
+    recording_started_at=None,
+    object_subdir=None,
+    send_event=True,
+):
     """
     Upload video file to MinIO and delete local file
     
@@ -45,10 +51,15 @@ def upload_video_to_minio(local_file_path, camera_id, recording_started_at=None)
             client.make_bucket(bucket_name)
             logger.info(f"Created MinIO bucket: {bucket_name}")
         
-        # Generate object name: camera_id/year/month/day/filename
+        # Generate object name: camera_id/year/month/day[/subdir]/filename
         timestamp = time.localtime()
         filename = os.path.basename(local_file_path)
-        object_name = f"{camera_id}/{timestamp.tm_year}/{timestamp.tm_mon:02d}/{timestamp.tm_mday:02d}/{filename}"
+        object_prefix = f"{camera_id}/{timestamp.tm_year}/{timestamp.tm_mon:02d}/{timestamp.tm_mday:02d}"
+        if object_subdir:
+            safe_subdir = object_subdir.strip("/")
+            object_name = f"{object_prefix}/{safe_subdir}/{filename}"
+        else:
+            object_name = f"{object_prefix}/{filename}"
         
         # Upload file
         logger.info(f"Uploading {local_file_path} to MinIO: {bucket_name}/{object_name}")
@@ -61,13 +72,14 @@ def upload_video_to_minio(local_file_path, camera_id, recording_started_at=None)
         
         logger.info(f"Successfully uploaded video to MinIO: {object_name}")
         
-        # Send event to Kafka (errors are handled inside the function)
-        send_video_uploaded_event(
-            camera_id=camera_id,
-            video_path=object_name,
-            bucket_name=bucket_name,
-            recording_started_at=recording_started_at
-        )
+        # Send event to Kafka for regular event-driven processing
+        if send_event:
+            send_video_uploaded_event(
+                camera_id=camera_id,
+                video_path=object_name,
+                bucket_name=bucket_name,
+                recording_started_at=recording_started_at
+            )
         
         # Delete local file after successful upload
         try:

@@ -72,12 +72,21 @@ def start_process_camera_stream(self, camera_id: str):
         expected_fps = data.get('expected_fps')
         record_fps = data.get('record_fps')
         is_video = data.get('is_video', False)
-        buffersize = data.get('buffersize', 1)
+        buffersize = data.get('buffersize', 0)
+        debug_enabled = data.get('debug_enabled', False)
+        debug_segment_duration = data.get('debug_segment_duration', 3600)
+        debug_minio_folder = data.get('debug_minio_folder', 'debug')
         
         logger.info(f"Camera URL for {camera_id}: {mask_camera_url(camera_url)}")
         logger.info(f"Camera FPS settings - Expected: {expected_fps}, Record: {record_fps}")
         logger.info(f"Camera is_video: {is_video}")
         logger.info(f"Camera buffersize: {buffersize}")
+        logger.info(
+            "Camera debug settings - enabled: %s, segment_duration: %s, minio_folder: %s",
+            debug_enabled,
+            debug_segment_duration,
+            debug_minio_folder,
+        )
         
         if not camera_url:
             error_msg = f"Camera {camera_id} has no URL configured"
@@ -97,7 +106,10 @@ def start_process_camera_stream(self, camera_id: str):
                 expected_fps=expected_fps,
                 record_fps=record_fps,
                 is_video=is_video,
-                buffersize=buffersize
+                buffersize=buffersize,
+                debug_enabled=debug_enabled,
+                debug_segment_duration=debug_segment_duration,
+                debug_minio_folder=debug_minio_folder,
             )
             
             # If we reach here, it means the stream ended naturally or was stopped

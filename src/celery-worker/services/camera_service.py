@@ -58,7 +58,17 @@ class CameraConnectionLostError(Exception):
     """Raised when camera connection is lost (too many consecutive failed frame reads)"""
     pass
 
-def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20, is_video=False, buffersize=1):
+def target_recording(
+    camera_url,
+    camera_id=None,
+    expected_fps=25,
+    record_fps=20,
+    is_video=False,
+    buffersize=0,
+    debug_enabled=False,
+    debug_segment_duration=3600,
+    debug_minio_folder="debug",
+):
     """
     Function that take video as input. When hands are detected, video recording is started until hands disappear + timeout seconds.
     Short videos with detected object are stored in defined directory.
@@ -75,6 +85,8 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
     max_failed_reads = settings.camera_max_failed_reads
     no_hand_timeout = settings.camera_no_hand_timeout
     max_recording_duration = settings.video_max_duration
+    debug_segment_duration = max(1, int(debug_segment_duration or 3600))
+    debug_folder_name = (debug_minio_folder or "debug").strip().strip("/")
 
     logger.info(
         "Camera %s: MediaPipe Hands settings: max_num_hands=%s, min_detection_confidence=%s, min_tracking_confidence=%s",
@@ -95,6 +107,10 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
     out = None
     current_video_file = None  # Track current recording file path
     current_recording_started_at = None  # Track ISO timestamp of recording start
+    debug_out = None
+    current_debug_video_file = None
+    current_debug_recording_started_at = None
+    debug_segment_start_time = None
     failed_reads_count = 0
     
     # FPS tracking variables
@@ -106,6 +122,9 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
         f"flags|{settings.ffmpeg_flags};"
         f"error|{settings.ffmpeg_error_recognition}"
     )
+    output_dir = os.getenv('CAMERA_OUTPUT_DIR', '/app/output/trigger/test')
+    debug_output_dir = os.path.join(output_dir, "debug")
+    debug_minio_subdir = f"video/{debug_folder_name}" if debug_folder_name else "video"
     os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = ffmpeg_options
     # Create video capture object with optimized settings for streaming
     logger.info(f"Connecting to camera stream: {mask_camera_url(camera_url)}")
@@ -123,6 +142,70 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
     rotation_angle = _get_rotation_angle(cap)
     if rotation_angle:
         logger.info(f"Camera {camera_id}: applying rotation correction of {rotation_angle} degrees for portrait video")
+
+    def close_debug_segment(reason: str, asynchronous: bool = True):
+        nonlocal debug_out, current_debug_video_file, current_debug_recording_started_at, debug_segment_start_time
+        if not debug_out:
+            return
+
+        debug_out.close()
+        debug_out = None
+        debug_segment_start_time = None
+        logger.info(
+            f"Camera {camera_id}: debug segment stopped: {current_debug_video_file} ({reason})"
+        )
+
+        if not current_debug_video_file:
+            return
+
+        debug_file_path = current_debug_video_file
+        debug_recording_started_at = current_debug_recording_started_at
+        current_debug_video_file = None
+        current_debug_recording_started_at = None
+
+        if asynchronous:
+            upload_thread = threading.Thread(
+                target=upload_video_to_minio,
+                args=(debug_file_path, camera_id, debug_recording_started_at),
+                kwargs={"object_subdir": debug_minio_subdir, "send_event": False},
+                daemon=True
+            )
+            upload_thread.start()
+            logger.info(f"Camera {camera_id}: started async debug upload for: {debug_file_path}")
+            return
+
+        if os.path.exists(debug_file_path):
+            minio_path = upload_video_to_minio(
+                debug_file_path,
+                camera_id,
+                debug_recording_started_at,
+                object_subdir=debug_minio_subdir,
+                send_event=False,
+            )
+            if minio_path:
+                logger.info(f"Camera {camera_id}: debug segment uploaded to MinIO: {minio_path}")
+
+    def start_debug_segment(now: float):
+        nonlocal debug_out, current_debug_video_file, current_debug_recording_started_at, debug_segment_start_time
+        os.makedirs(debug_output_dir, exist_ok=True)
+        current_debug_video_file = f"{debug_output_dir}/debug_{camera_id}_{int(now)}.mp4"
+        current_debug_recording_started_at = datetime.utcnow().isoformat() + 'Z'
+        debug_segment_start_time = now
+        debug_out = imageio.get_writer(
+            current_debug_video_file,
+            fps=record_fps,
+            codec=settings.video_codec,
+            pixelformat=settings.video_pixel_format,
+            macro_block_size=1,
+            ffmpeg_params=[
+                '-crf', str(settings.video_crf),
+                '-preset', settings.video_preset
+            ]
+        )
+        logger.info(
+            f"Camera {camera_id}: debug segment started: {current_debug_video_file} "
+            f"(segment_duration={debug_segment_duration}s, minio_subdir={debug_minio_subdir})"
+        )
     
     try:
         while True:
@@ -166,6 +249,20 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
                 last_log_time = current_time
 
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            if debug_enabled:
+                if debug_out is None:
+                    start_debug_segment(current_time)
+                elif debug_segment_start_time is not None and current_time - debug_segment_start_time >= debug_segment_duration:
+                    close_debug_segment(
+                        reason=f"segment duration {debug_segment_duration}s reached",
+                        asynchronous=True,
+                    )
+                    start_debug_segment(current_time)
+
+                if debug_out:
+                    debug_out.append_data(rgb_frame)
+
             results = hands.process(rgb_frame)
             hands_detected = results.multi_hand_landmarks is not None
 
@@ -177,7 +274,6 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
                 no_hand_start = None
 
                 if not recording:
-                    output_dir = os.getenv('CAMERA_OUTPUT_DIR', '/app/output/trigger/test')
                     os.makedirs(output_dir, exist_ok=True)
                     current_video_file = f"{output_dir}/recording_{camera_id}_{int(time.time())}.mp4"
                     current_recording_started_at = datetime.utcnow().isoformat() + 'Z'
@@ -253,6 +349,9 @@ def target_recording(camera_url, camera_id=None, expected_fps=25, record_fps=20,
                 if minio_path:
                     logger.info(f"Unfinished video uploaded to MinIO: {minio_path}")
                 current_recording_started_at = None
+
+        if debug_out:
+            close_debug_segment(reason="cleanup", asynchronous=False)
         
         cap.release()
         cv2.destroyAllWindows()
