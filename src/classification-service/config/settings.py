@@ -55,6 +55,9 @@ class Settings(KafkaProducerConfigMixin):
     pose_min_tracking_confidence: float = 0.2
     features_min_threshold: int = 5  # Minimum features required to run classifier
     classification_confidence_threshold: float = 0.6  # If suspicious classification confidence is below this, treat as normal
+    scale_landmarks: bool = False  # Apply sklearn scaler to pose landmarks before flattening
+    scale_object_features: bool = False  # Apply sklearn scaler to object bounding-box features
+    landmark_scaler: str = "standard"  # standard | minmax
     
     # YOLOv7 Custom Model Configuration
     yolov7_config_path: str = "yolov7/cfg/training/yolov7_tiny_2cl.yaml"  # Under service dir (/app) or sibling src/yolov7 locally

@@ -136,16 +136,13 @@ class PipelineService:
             return self._final_event(self.unknown_label, "classification_not_enough_frames")
 
         if tracking is None:
-            if (
-                confidence > self.classification_confidence_threshold
-                and classification_class == 1
-                and envelope.has_next_stage()
-            ):
-                next_stage = envelope.next_stage()
-                return self._next_stage(next_stage, "classification_alert_high_confidence")
-
-            if confidence > self.classification_confidence_threshold and classification_class in (0, 2):
-                return self._final_event(classification.get("event_type", self.unknown_label), "classification_confident_normal")
+            if confidence > self.classification_confidence_threshold:
+                reason = (
+                    "classification_alert_high_confidence"
+                    if classification_class == 1
+                    else "classification_confident_normal"
+                )
+                return self._final_event(classification.get("event_type", self.unknown_label), reason)
 
             if confidence <= self.classification_confidence_threshold and envelope.has_next_stage():
                 next_stage = envelope.next_stage()
