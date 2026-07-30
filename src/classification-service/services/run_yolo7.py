@@ -19,16 +19,42 @@ import numpy as np
 import logging
 from typing import Tuple, List, Optional, Dict
 
-# Add yolov7 directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'yolov7'))
+
+def _add_yolov7_root_to_path() -> None:
+    """YOLOv7 modules use `from utils.*`; their repo root must be on sys.path."""
+    service_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for candidate in (
+        os.path.join(service_root, "yolov7"),
+        os.path.join(os.path.dirname(service_root), "yolov7"),
+    ):
+        if os.path.isdir(os.path.join(candidate, "utils")) and candidate not in sys.path:
+            sys.path.insert(0, candidate)
+            return
+
+
+_add_yolov7_root_to_path()
 
 from utils.general import non_max_suppression, scale_coords
 from utils.datasets import letterbox
 from models.yolo import Model
 
 import mediapipe as mp
-from tensorflow.keras.models import load_model
 from config.settings import settings
+
+import tensorflow as tf
+
+if settings.tensorflow_device.lower() == "cpu":
+    tf.config.set_visible_devices([], "GPU")
+
+from tensorflow.keras.models import load_model
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+
+_SERVICE_DIR = os.path.dirname(os.path.dirname(__file__))
+
+LANDMARK_SCALERS = {
+    "standard": StandardScaler,
+    "minmax": MinMaxScaler
+}
 
 logger = logging.getLogger(__name__)
 
@@ -85,21 +111,25 @@ class YOLOv7ActionClassifier:
             f"object_class_id={settings.object_class_id}, "
             f"conf_threshold={settings.conf_threshold}, "
             f"target_interval={settings.target_interval}, "
+            f"process_all_frames={settings.process_all_frames}, "
             f"sequence_length={settings.sequence_length}, "
-            f"features_min_threshold={settings.features_min_threshold}"
+            f"features_min_threshold={settings.features_min_threshold}, "
+            f"yolov7_device={settings.yolov7_device}, "
+            f"tensorflow_device={settings.tensorflow_device}, "
+            f"scale_landmarks={settings.scale_landmarks}, "
+            f"scale_object_features={settings.scale_object_features}, "
+            f"landmark_scaler={settings.landmark_scaler}"
         )
         
         # Load YOLOv7 model for banknote detection
         try:
             self.device = settings.yolov7_device
-            # Build absolute path for config file (relative to classification-service directory)
-            base_dir = os.path.dirname(os.path.dirname(__file__))  # classification-service directory
-            config_path = os.path.abspath(os.path.join(base_dir, settings.yolov7_config_path))
+            config_path = settings.yolov7_config_path
             
             self.yolo_model = Model(config_path).to(self.device)
             
             # Build absolute path for state file (relative to project root)
-            project_root = os.path.dirname(os.path.dirname(base_dir))  # project root
+            project_root = os.path.dirname(os.path.dirname(_SERVICE_DIR))  # project root
             state_path = os.path.abspath(os.path.join(project_root, settings.yolo_model_path))
             
             state = torch.load(state_path, map_location=self.device)
@@ -140,8 +170,23 @@ class YOLOv7ActionClassifier:
         self.target_interval = settings.target_interval
         self.sequence_length = settings.sequence_length
         self.features_threshold = settings.features_min_threshold
+        self.scale_landmarks = settings.scale_landmarks
+        self.scale_object_features = settings.scale_object_features
+        self.feature_scaler = self._create_feature_scaler(settings.landmark_scaler)
 
         logger.info("YOLOv7ActionClassifier initialized successfully")
+
+    @staticmethod
+    def _create_feature_scaler(scaler_name: str):
+        scaler_cls = LANDMARK_SCALERS.get(scaler_name.lower())
+        if scaler_cls is None:
+            valid = ", ".join(sorted(LANDMARK_SCALERS))
+            raise ValueError(f"Unknown feature scaler '{scaler_name}'. Choose from: {valid}")
+        return scaler_cls()
+
+    def _apply_feature_scaler(self, features: np.ndarray) -> np.ndarray:
+        array = features.reshape(1, -1) if features.ndim == 1 else features
+        return self.feature_scaler.fit_transform(array).flatten()
     
     def extract_keypoints(self, pose_results) -> np.ndarray:
         """
@@ -154,13 +199,18 @@ class YOLOv7ActionClassifier:
             np.ndarray: Flattened array of landmark coordinates
         """
         if pose_results.pose_landmarks:
-            lm = np.array([
+            # Extract raw landmarks
+            landmarks = np.array([
                 [
                     pose_results.pose_landmarks.landmark[landmark].x,
-                    pose_results.pose_landmarks.landmark[landmark].y
+                    pose_results.pose_landmarks.landmark[landmark].y                
                 ]
                 for landmark in SELECTED_LANDMARKS
-            ]).flatten()
+            ])        
+            if self.scale_landmarks:
+                lm = self._apply_feature_scaler(landmarks)
+            else:
+                lm = landmarks.flatten()
         else:
             lm = np.zeros(len(SELECTED_LANDMARKS) * 2)
         return lm
@@ -212,7 +262,10 @@ class YOLOv7ActionClassifier:
         object_y = ((y1 + y2) / 2) / h
         object_w = (x2 - x1) / w
         object_h = (y2 - y1) / h
-        return np.array([object_x, object_y, object_w, object_h])
+        features = np.array([object_x, object_y, object_w, object_h])
+        if self.scale_object_features:
+            return self._apply_feature_scaler(features)
+        return features
     
     def predict_action(self, sequence: np.ndarray) -> Tuple[int, float]:
         """
@@ -269,7 +322,7 @@ class YOLOv7ActionClassifier:
                     break
                 
                 frame_count += 1
-                if frame_count % frame_interval != 0:
+                if not settings.process_all_frames and frame_count % frame_interval != 0:
                     continue
                 
                 # Object Detection

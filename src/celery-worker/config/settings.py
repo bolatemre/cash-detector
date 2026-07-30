@@ -1,9 +1,11 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
 from typing import Optional
 
+from common.kafka_producer_config import KafkaProducerConfigMixin
+from pydantic import field_validator
+from pydantic_settings import SettingsConfigDict
 
-class Settings(BaseSettings):
+
+class Settings(KafkaProducerConfigMixin):
     """Application settings loaded from environment variables"""
     
     # Celery Configuration
@@ -37,7 +39,8 @@ class Settings(BaseSettings):
     # Kafka Configuration
     kafka_bootstrap_servers: str = "kafka:9093"
     kafka_uploaded_videos_topic: str = "uploaded-videos"
-    
+    kafka_producer_client_id: str = "celery-worker"
+
     # Application Configuration
     log_level: str = "INFO"
     

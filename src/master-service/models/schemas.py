@@ -11,7 +11,10 @@ class CameraBase(BaseModel):
     expected_fps: Optional[int] = 25
     record_fps: Optional[int] = 20
     is_video: Optional[bool] = False
-    buffersize: Optional[int] = 1
+    buffersize: Optional[int] = 0
+    debug_enabled: Optional[bool] = False
+    debug_segment_duration: Optional[int] = 3600
+    debug_minio_folder: Optional[str] = "debug"
 
 
 class CameraCreate(CameraBase):
@@ -27,6 +30,9 @@ class CameraUpdate(BaseModel):
     record_fps: Optional[int] = None
     is_video: Optional[bool] = None
     buffersize: Optional[int] = None
+    debug_enabled: Optional[bool] = None
+    debug_segment_duration: Optional[int] = None
+    debug_minio_folder: Optional[str] = None
 
 
 class CameraResponse(CameraBase):
@@ -52,7 +58,10 @@ class CameraUrlResponse(BaseModel):
     expected_fps: Optional[int] = 25
     record_fps: Optional[int] = 20
     is_video: Optional[bool] = False
-    buffersize: Optional[int] = 1
+    buffersize: Optional[int] = 0
+    debug_enabled: Optional[bool] = False
+    debug_segment_duration: Optional[int] = 3600
+    debug_minio_folder: Optional[str] = "debug"
 
 
 # Task-related schemas

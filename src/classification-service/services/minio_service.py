@@ -34,7 +34,7 @@ class MinioService:
         
         logger.info(f"MinIO service initialized: {endpoint}/{self.bucket}, temp dir: {self.temp_dir}")
     
-    def download_video_to_temp(self, video_path: str) -> str:
+    def download_video_to_temp(self, video_path: str, bucket_name: str | None = None) -> str:
         """
         Download video from MinIO to system temporary file
         
@@ -58,11 +58,12 @@ class MinioService:
             temp_file_path = temp_file.name
             temp_file.close()
             
-            logger.info(f"Downloading video from MinIO: {self.bucket}/{video_path}")
+            bucket = bucket_name or self.bucket
+            logger.info(f"Downloading video from MinIO: {bucket}/{video_path}")
             
             # Download file from MinIO
             self.client.fget_object(
-                bucket_name=self.bucket,
+                bucket_name=bucket,
                 object_name=video_path,
                 file_path=temp_file_path
             )
