@@ -2,7 +2,7 @@ import logging
 import signal
 import sys
 
-from common.kafka_messages import PipelineStageEnvelope
+from common.kafka_messages import PipelineStageEnvelope, StageName
 
 from kafka_consumer import VideoConsumer
 from kafka_producer import TrackingKafkaProducer
@@ -40,7 +40,7 @@ def main():
         def process_video_callback(video_data: dict):
             job = PipelineStageEnvelope.model_validate(video_data)
             stage_result = tracking_service.process(job.model_dump(mode="json"))
-            completion = job.with_completion("tracking", stage_result)
+            completion = job.with_completion(StageName.TRACKING, stage_result)
             sent = kafka_producer_instance.send_stage_result(completion)
             if not sent:
                 raise RuntimeError("Failed to send tracking stage result")

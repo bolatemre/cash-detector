@@ -14,16 +14,17 @@ Get the AI Security System up and running in minutes.
 ### 2. Verify Environment Files Exist
 
 ```bash
-ls -la *.env
+ls -la env/*.env
 ```
 
 You should see:
-- `celery-worker.env`
-- `classification-service.env`
-- `tracking-service.env`
-- `pipeline-service.env`
-- `event-processor.env`
-- `master-service.env`
+- `env/celery-worker.env`
+- `env/classification-service.env`
+- `env/tracking-service.env`
+- `env/vlm-classification-service.env`
+- `env/pipeline-service.env`
+- `env/event-processor.env`
+- `env/master-service.env`
 
 need to replace credential values in env files with real values
 
@@ -53,6 +54,7 @@ docker save be-celery-worker:latest | gzip > be-celery-worker.tar.gz
 docker save be-event-processor:latest | gzip > be-event-processor.tar.gz
 docker save be-classification-service:latest | gzip > be-classification-service.tar.gz
 docker save be-tracking-service:latest | gzip > be-tracking-service.tar.gz
+docker save be-vlm-classification-service:latest | gzip > be-vlm-classification-service.tar.gz
 docker save be-pipeline-service:latest | gzip > be-pipeline-service.tar.gz
 
 # 3. Transfer to server
@@ -72,6 +74,7 @@ docker load -i be-celery-worker.tar.gz
 docker load -i be-event-processor.tar.gz
 docker load -i be-classification-service.tar.gz
 docker load -i be-tracking-service.tar.gz
+docker load -i be-vlm-classification-service.tar.gz
 docker load -i be-pipeline-service.tar.gz
 
 # 6. On server: Create database schemas
@@ -202,6 +205,27 @@ docker compose logs -f celery-worker
 
 # Rebuild and restart
 docker compose build --no-cache && docker compose up -d
+```
+
+## Switching classification backends
+
+Default `STAGE_ORDER=classification,tracking` uses YOLO classification and tracking. To use the VLM service instead:
+
+1. Set `STAGE_ORDER=vlm` in `env/pipeline-service.env`
+2. Stop the YOLO workers and start VLM (NVIDIA GPU required):
+
+```bash
+docker compose stop classification-service tracking-service
+docker compose --profile vlm up -d vlm-classification-service
+docker compose up -d pipeline-service
+```
+
+To switch back to YOLO:
+
+```bash
+# Set STAGE_ORDER=classification,tracking in env/pipeline-service.env
+docker compose --profile vlm stop vlm-classification-service
+docker compose up -d classification-service tracking-service pipeline-service
 ```
 
 ## Troubleshooting

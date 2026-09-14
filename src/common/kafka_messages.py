@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Any, Literal, Optional, Self
 
 from pydantic import BaseModel, ConfigDict, Field
 
-StageName = Literal["classification", "tracking"]
+
+class StageName(StrEnum):
+    CLASSIFICATION = "classification"
+    TRACKING = "tracking"
+    VLM = "vlm"
+
+
 StageResultPayload = dict[str, Any]
 
 
@@ -54,6 +61,15 @@ class TrackingStageResult(BaseModel):
     final_status: str
     alerts: int = 0
     oks: int = 0
+
+
+class VlmStageResult(BaseModel):
+    """Output of the VLM classification stage."""
+
+    model_config = ConfigDict(extra="allow")
+
+    event_type: str
+    description: str = ""
 
 
 class PipelineStageEnvelope(BaseModel):
