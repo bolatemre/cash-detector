@@ -22,6 +22,7 @@ You should see:
 - `env/classification-service.env`
 - `env/tracking-service.env`
 - `env/vlm-classification-service.env`
+- `env/banknote-detector-service.env`
 - `env/pipeline-service.env`
 - `env/event-processor.env`
 - `env/master-service.env`
@@ -55,6 +56,7 @@ docker save be-event-processor:latest | gzip > be-event-processor.tar.gz
 docker save be-classification-service:latest | gzip > be-classification-service.tar.gz
 docker save be-tracking-service:latest | gzip > be-tracking-service.tar.gz
 docker save be-vlm-classification-service:latest | gzip > be-vlm-classification-service.tar.gz
+docker save be-banknote-detector-service:latest | gzip > be-banknote-detector-service.tar.gz
 docker save be-pipeline-service:latest | gzip > be-pipeline-service.tar.gz
 
 # 3. Transfer to server
@@ -75,6 +77,7 @@ docker load -i be-event-processor.tar.gz
 docker load -i be-classification-service.tar.gz
 docker load -i be-tracking-service.tar.gz
 docker load -i be-vlm-classification-service.tar.gz
+docker load -i be-banknote-detector-service.tar.gz
 docker load -i be-pipeline-service.tar.gz
 
 # 6. On server: Create database schemas
@@ -209,14 +212,14 @@ docker compose build --no-cache && docker compose up -d
 
 ## Switching classification backends
 
-Default `STAGE_ORDER=classification,tracking` uses YOLO classification and tracking. To use the VLM service instead:
+Default `STAGE_ORDER=classification,tracking` uses YOLO classification and tracking. To use banknote detection + VLM instead:
 
-1. Set `STAGE_ORDER=vlm` in `env/pipeline-service.env`
-2. Stop the YOLO workers and start VLM (NVIDIA GPU required):
+1. Set `STAGE_ORDER=banknote,vlm` in `env/pipeline-service.env`
+2. Stop the YOLO workers and start the banknote detector + VLM (NVIDIA GPU required for VLM):
 
 ```bash
 docker compose stop classification-service tracking-service
-docker compose --profile vlm up -d vlm-classification-service
+docker compose --profile vlm up -d banknote-detector-service vlm-classification-service
 docker compose up -d pipeline-service
 ```
 
@@ -224,7 +227,7 @@ To switch back to YOLO:
 
 ```bash
 # Set STAGE_ORDER=classification,tracking in env/pipeline-service.env
-docker compose --profile vlm stop vlm-classification-service
+docker compose --profile vlm stop banknote-detector-service vlm-classification-service
 docker compose up -d classification-service tracking-service pipeline-service
 ```
 

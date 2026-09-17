@@ -97,11 +97,13 @@ services:
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-classification-requests --partitions 3 --replication-factor 1;
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-tracking-requests --partitions 3 --replication-factor 1;
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-vlm-requests --partitions 3 --replication-factor 1;
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-banknote-requests --partitions 3 --replication-factor 1;
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-stage-results --partitions 3 --replication-factor 1;
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-dead-letter --partitions 3 --replication-factor 1;
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic classification-dead-letter --partitions 3 --replication-factor 1;
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic tracking-dead-letter --partitions 3 --replication-factor 1;
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic vlm-dead-letter --partitions 3 --replication-factor 1;
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic banknote-dead-letter --partitions 3 --replication-factor 1;
       echo 'Kafka topics created successfully';
       exit 0;
       "
@@ -235,7 +237,28 @@ services:
       - /tmp/videos:/tmp/videos
       - ./models:/mnt/models:ro
 
-  # VLM Classification Stage Service — alternative to classification + tracking
+  # Banknote detection stage — gates VLM so only videos with cash go to the VLM
+  banknote-detector-service:
+    profiles: ["vlm"]
+    image: be-banknote-detector-service:latest
+    build:
+      context: .
+      dockerfile: docker/banknote-detector-service/Dockerfile
+    container_name: security-banknote-detector-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    env_file:
+      - ./docker/env/banknote-detector-service.env
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+      - /tmp/videos:/tmp/videos
+      - ./models:/mnt/models:ro
+
+  # VLM Classification Stage Service — used with banknote detection (STAGE_ORDER=banknote,vlm)
   vlm-classification-service:
     profiles: ["vlm"]
     image: be-vlm-classification-service:latest
@@ -257,7 +280,7 @@ services:
       - /tmp/videos:/tmp/videos
       - huggingface_cache:/root/.cache/huggingface
 
-  # Pipeline Service - routes uploaded videos to classification/tracking or VLM
+  # Pipeline Service - routes uploaded videos to classification/tracking or banknote+VLM
   pipeline-service:
     build:
       context: .

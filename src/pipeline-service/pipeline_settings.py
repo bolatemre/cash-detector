@@ -9,6 +9,7 @@ class PipelineSettings(KafkaProducerConfigMixin):
     kafka_stage_results_topic: str = "pipeline-stage-results"
     kafka_classification_requests_topic: str = "pipeline-classification-requests"
     kafka_tracking_requests_topic: str = "pipeline-tracking-requests"
+    kafka_banknote_requests_topic: str = "pipeline-banknote-requests"
     kafka_vlm_requests_topic: str = "pipeline-vlm-requests"
     kafka_group_id: str = "pipeline-service-group"
     kafka_security_events_topic: str = "security-events"

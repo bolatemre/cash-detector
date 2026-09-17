@@ -131,6 +131,8 @@ class MinioService:
             return MinioService._classification_tags(stage_result)
         if stage_name == StageName.VLM:
             return MinioService._vlm_tags(stage_result)
+        if stage_name == StageName.BANKNOTE:
+            return MinioService._banknote_tags(stage_result)
         return MinioService._tracking_tags(stage_result)
 
     @staticmethod
@@ -161,3 +163,11 @@ class MinioService:
     @staticmethod
     def _vlm_tags(vlm_result: dict[str, Any]) -> dict[str, str]:
         return {StageName.VLM: str(vlm_result["event_type"])}
+
+    @staticmethod
+    def _banknote_tags(banknote_result: dict[str, Any]) -> dict[str, str]:
+        tags = {StageName.BANKNOTE: str(banknote_result["event_type"])}
+        detected = banknote_result.get("detected")
+        if detected is not None:
+            tags["banknote_detected"] = str(detected).lower()
+        return tags
