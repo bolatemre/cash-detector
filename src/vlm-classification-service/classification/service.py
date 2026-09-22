@@ -1,7 +1,9 @@
 import logging
 import time
+import traceback
 
 import torch
+import gc
 
 from adapters.minio_service import MinioObjectNotFoundError, MinioService
 from classification.frame_extractor import FrameExtractor
@@ -53,7 +55,7 @@ class VlmClassificationService:
 
     def _classify(self, video_path: str) -> VlmStageResult:
         frames, effective_fps = self._frames.extract(video_path)
-        last_error: Exception | None = None
+        last_error_msg: str = ""
 
         for attempt in range(self._settings.max_retries + 1):
             try:
@@ -75,16 +77,20 @@ class VlmClassificationService:
                         e,
                     )
                     return self._unknown_result(f"Failed to parse VLM output as JSON: {e}")
-                last_error = e
+                last_error_msg = str(e)
                 logger.error("VLM analysis failed: %s", e, exc_info=True)
+                if e.__traceback__ is not None:
+                    traceback.clear_frames(e.__traceback__)
+                del e
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
                 if attempt < self._settings.max_retries:
                     logger.info("Retrying in %s seconds...", self._settings.retry_delay_seconds)
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
                     time.sleep(self._settings.retry_delay_seconds)
 
         return self._unknown_result(
-            f"Failed to analyze video after retries: {last_error}"
+            f"Failed to analyze video after retries: {last_error_msg}"
         )
 
     def _unknown_result(self, reason: str) -> VlmStageResult:
