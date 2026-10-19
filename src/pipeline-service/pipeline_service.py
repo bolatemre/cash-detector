@@ -10,9 +10,17 @@ from services.minio_service import MinioService
 
 logger = logging.getLogger(__name__)
 
-_STAGE_TOPICS: dict[str, str] = {
-    "classification": settings.kafka_classification_requests_topic,
-    "tracking": settings.kafka_tracking_requests_topic,
+_STAGE_TOPICS: dict[StageName, str] = {
+    StageName.CLASSIFICATION: settings.kafka_classification_requests_topic,
+    StageName.TRACKING: settings.kafka_tracking_requests_topic,
+    StageName.BANKNOTE: settings.kafka_banknote_requests_topic,
+    StageName.VLM: settings.kafka_vlm_requests_topic,
+}
+
+_ALLOWED_STAGE_ORDERS = {
+    (StageName.CLASSIFICATION, StageName.TRACKING),
+    (StageName.TRACKING, StageName.CLASSIFICATION),
+    (StageName.BANKNOTE, StageName.VLM),
 }
 
 
@@ -23,12 +31,14 @@ class PipelineService:
         self.alert_labels = {label.strip().lower() for label in settings.alert_labels.split(",") if label.strip()}
         self.classification_confidence_threshold = settings.classification_confidence_threshold
         self.unknown_label = settings.unknown_label
-        self.stage_order = [stage.strip().lower() for stage in settings.stage_order.split(",") if stage.strip()]
+        self.stage_order = _parse_stage_order(settings.stage_order)
         self._validate_stage_order()
 
     def _validate_stage_order(self) -> None:
-        if sorted(self.stage_order) != sorted(_STAGE_TOPICS):
-            raise ValueError(f"STAGE_ORDER must contain exactly: {sorted(_STAGE_TOPICS)}")
+        if tuple(self.stage_order) not in _ALLOWED_STAGE_ORDERS:
+            raise ValueError(
+                "STAGE_ORDER must be 'classification,tracking', 'tracking,classification', or 'banknote,vlm'"
+            )
 
     def handle_uploaded_video(self, video_data: dict[str, Any]) -> None:
         uploaded = VideoUploadedMessage.model_validate(video_data)
@@ -114,17 +124,62 @@ class PipelineService:
         stage_results: dict[StageName, dict[str, Any]],
     ) -> dict[str, Any]:
         first_stage = envelope.stage_order[0]
-        if first_stage == "classification":
+        if first_stage == StageName.BANKNOTE:
+            return self._resolve_banknote_vlm_decision(envelope, stage_results)
+        if first_stage == StageName.VLM:
+            return self._resolve_vlm_decision(envelope, stage_results)
+        if first_stage == StageName.CLASSIFICATION:
             return self._resolve_classification_first_decision(envelope, stage_results)
-        return self._resolve_tracking_first_decision(envelope, stage_results)
+        if first_stage == StageName.TRACKING:
+            return self._resolve_tracking_first_decision(envelope, stage_results)
+        raise ValueError(f"Unsupported first stage: {first_stage!r}")
+
+    def _resolve_banknote_vlm_decision(
+        self,
+        envelope: PipelineStageEnvelope,
+        stage_results: dict[StageName, dict[str, Any]],
+    ) -> dict[str, Any]:
+        vlm = stage_results.get(StageName.VLM)
+        if vlm:
+            return self._resolve_vlm_decision(envelope, stage_results)
+
+        banknote = stage_results.get(StageName.BANKNOTE)
+        if not banknote:
+            return self._final_event(envelope.completion_event_type(), "no_banknote_payload")
+
+        if self._is_banknote_detected(banknote):
+            if envelope.has_next_stage():
+                next_stage = envelope.next_stage()
+                return self._next_stage(next_stage, "banknote_detected_requires_vlm")
+            return self._final_event(
+                banknote.get("event_type", self.unknown_label),
+                "banknote_detected_terminal",
+            )
+
+        event_type = str(banknote.get("event_type") or "not_detected")
+        return self._final_event(event_type, "banknote_not_detected")
+
+    def _resolve_vlm_decision(
+        self,
+        envelope: PipelineStageEnvelope,
+        stage_results: dict[StageName, dict[str, Any]],
+    ) -> dict[str, Any]:
+        vlm = stage_results.get(StageName.VLM)
+        if not vlm:
+            return self._final_event(envelope.completion_event_type(), "no_vlm_payload")
+
+        event_type = str(vlm.get("event_type", self.unknown_label) or self.unknown_label)
+        if event_type.lower() == self.unknown_label:
+            return self._final_event(self.unknown_label, "vlm_unknown")
+        return self._final_event(event_type, "vlm_terminal")
 
     def _resolve_classification_first_decision(
         self,
         envelope: PipelineStageEnvelope,
         stage_results: dict[StageName, dict[str, Any]],
     ) -> dict[str, Any]:
-        classification = stage_results.get("classification")
-        tracking = stage_results.get("tracking")
+        classification = stage_results.get(StageName.CLASSIFICATION)
+        tracking = stage_results.get(StageName.TRACKING)
 
         if not classification:
             return self._final_event(envelope.completion_event_type(), "no_classification_payload")
@@ -170,8 +225,8 @@ class PipelineService:
         envelope: PipelineStageEnvelope,
         stage_results: dict[StageName, dict[str, Any]],
     ) -> dict[str, Any]:
-        tracking = stage_results.get("tracking")
-        classification = stage_results.get("classification")
+        tracking = stage_results.get(StageName.TRACKING)
+        classification = stage_results.get(StageName.CLASSIFICATION)
 
         if not tracking:
             return self._final_event(envelope.completion_event_type(), "no_tracking_payload")
@@ -245,7 +300,7 @@ class PipelineService:
         return event_type == self.unknown_label or classification_class not in (0, 1, 2)
 
     @staticmethod
-    def _next_stage(next_stage: str | None, reason: str) -> dict[str, Any]:
+    def _next_stage(next_stage: StageName | None, reason: str) -> dict[str, Any]:
         if not next_stage:
             return {"action": "final", "event_type": "unknown", "reason": "missing_next_stage"}
         return {"action": "next", "next_stage": next_stage, "reason": reason}
@@ -256,6 +311,15 @@ class PipelineService:
 
     def _is_alert(self, event_type: str) -> bool:
         return (event_type or "").lower() in self.alert_labels
+
+    @staticmethod
+    def _is_banknote_detected(banknote_result: dict[str, Any]) -> bool:
+        detected = banknote_result.get("detected")
+        if isinstance(detected, bool):
+            return detected
+        if detected is not None:
+            return str(detected).lower() in {"true", "1", "yes", "detected"}
+        return str(banknote_result.get("event_type", "")).lower() == "detected"
 
     def _tag_stage_on_video(
         self,
@@ -300,12 +364,19 @@ class PipelineService:
             envelope.video_path,
         )
 
-    def _send_to_stage(self, stage_name: str, payload: PipelineStageEnvelope) -> None:
+    def _send_to_stage(self, stage_name: StageName, payload: PipelineStageEnvelope) -> None:
         topic = _STAGE_TOPICS.get(stage_name)
         if topic is None:
             raise ValueError(f"Unsupported stage: {stage_name!r}")
         if not self.kafka_producer.send_stage_request(topic=topic, payload=payload):
             raise RuntimeError(f"Failed to send stage request for '{stage_name}'")
+
+
+def _parse_stage_order(stage_order: str) -> list[StageName]:
+    try:
+        return [StageName(stage.strip().lower()) for stage in stage_order.split(",") if stage.strip()]
+    except ValueError as e:
+        raise ValueError(f"Invalid STAGE_ORDER={stage_order!r}: {e}") from e
 
 
 def _utc_now_iso() -> str:

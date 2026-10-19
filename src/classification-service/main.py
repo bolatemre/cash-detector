@@ -2,7 +2,7 @@ import logging
 import signal
 import sys
 
-from common.kafka_messages import PipelineStageEnvelope
+from common.kafka_messages import PipelineStageEnvelope, StageName
 
 from services.kafka_consumer import ConsumerFatalError, VideoConsumer
 from services.classification_service import ClassificationService
@@ -52,7 +52,7 @@ def main():
         def process_video_callback(video_data):
             job = PipelineStageEnvelope.model_validate(video_data)
             stage_result = classification_service.classify_video_payload(job.model_dump(mode="json"))
-            completion = job.with_completion("classification", stage_result)
+            completion = job.with_completion(StageName.CLASSIFICATION, stage_result)
             if not kafka_producer.send_stage_result(completion):
                 raise RuntimeError("Failed to send classification stage result")
 

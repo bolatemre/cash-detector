@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Any, Literal, Optional, Self
 
 from pydantic import BaseModel, ConfigDict, Field
 
-StageName = Literal["classification", "tracking"]
+
+class StageName(StrEnum):
+    CLASSIFICATION = "classification"
+    TRACKING = "tracking"
+    BANKNOTE = "banknote"
+    VLM = "vlm"
+
+
 StageResultPayload = dict[str, Any]
 
 
@@ -56,6 +64,24 @@ class TrackingStageResult(BaseModel):
     oks: int = 0
 
 
+class VlmStageResult(BaseModel):
+    """Output of the VLM classification stage."""
+
+    model_config = ConfigDict(extra="allow")
+
+    event_type: str
+    description: str = ""
+
+
+class BanknoteStageResult(BaseModel):
+    """Output of the banknote detection stage."""
+
+    model_config = ConfigDict(extra="allow")
+
+    event_type: str
+    detected: bool
+
+
 class PipelineStageEnvelope(BaseModel):
     """
     Flat JSON message for pipeline orchestration on Kafka.
@@ -84,7 +110,7 @@ class PipelineStageEnvelope(BaseModel):
 
     # --- Pipeline progress ---
     stage_order: list[StageName] = Field(
-        description="Ordered stage names, e.g. ['classification', 'tracking']."
+        description="Ordered stage names, e.g. ['classification', 'tracking'] or ['banknote', 'vlm']."
     )
     current_stage_index: int = Field(
         default=0,

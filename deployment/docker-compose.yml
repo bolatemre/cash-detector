@@ -6,7 +6,7 @@ services:
     image: postgres:15-alpine
     container_name: security-postgres
     env_file:
-      - postgres.env
+      - ./env/postgres.env
     ports:
       - "5432:5432"
     volumes:
@@ -55,7 +55,7 @@ services:
       - "9000:9000"      # API port
       - "9001:9001"      # Console UI port
     env_file:
-      - minio.env
+      - ./env/minio.env
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
@@ -70,7 +70,7 @@ services:
     image: minio/mc:latest
     container_name: security-minio-init
     env_file:
-      - minio.env
+      - ./env/minio.env
     depends_on:
       minio:
         condition: service_healthy
@@ -96,10 +96,14 @@ services:
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic uploaded-videos --partitions 3 --replication-factor 1;
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-classification-requests --partitions 3 --replication-factor 1;
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-tracking-requests --partitions 3 --replication-factor 1;
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-vlm-requests --partitions 3 --replication-factor 1;
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-banknote-requests --partitions 3 --replication-factor 1;
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-stage-results --partitions 3 --replication-factor 1;
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic pipeline-dead-letter --partitions 3 --replication-factor 1;
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic classification-dead-letter --partitions 3 --replication-factor 1;
       kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic tracking-dead-letter --partitions 3 --replication-factor 1;
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic vlm-dead-letter --partitions 3 --replication-factor 1;
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists --topic banknote-dead-letter --partitions 3 --replication-factor 1;
       echo 'Kafka topics created successfully';
       exit 0;
       "
@@ -114,7 +118,7 @@ services:
     ports:
       - "8080:8080"
     env_file:
-      - kafka-ui.env
+      - ./env/kafka-ui.env
     restart: unless-stopped
 
   # Event Processor Service
@@ -129,10 +133,9 @@ services:
       master-service:
         condition: service_started
     env_file:
-      - event-processor.env
+      - ./env/event-processor.env
     restart: unless-stopped
     volumes:
-      - ./logs:/app/logs
       - ./templates:/app/templates:ro  # Mount email templates (read-only)
 
   # Master Service
@@ -149,10 +152,8 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - master-service.env
+      - ./env/master-service.env
     restart: unless-stopped
-    volumes:
-      - ./logs:/app/logs
 
   # Redis - Message Broker for Celery
   redis:
@@ -183,13 +184,12 @@ services:
       kafka:
         condition: service_healthy
     env_file:
-      - celery-worker.env
+      - ./env/celery-worker.env
     restart: unless-stopped
     volumes:
-      - ./logs:/app/logs
       - ./videos:/app/videos
 
-  # Classification Stage Service - HTTP API for stage execution
+  # Classification Stage Service
   classification-service:
     image: be-classification-service:latest
     container_name: security-classification-service
@@ -199,12 +199,20 @@ services:
       minio:
         condition: service_healthy
     env_file:
-      - classification-service.env
+      - ./env/classification-service.env
     restart: unless-stopped
     volumes:
-      - ./logs:/app/logs
       - /tmp/videos:/tmp/videos
-      - ./models:/mnt/models:ro
+      - ./models:/app/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+              options:
+                mem_limit: "6g"
 
   # Tracking Stage Service
   tracking-service:
@@ -216,12 +224,71 @@ services:
       minio:
         condition: service_healthy
     env_file:
-      - tracking-service.env
+      - ./env/tracking-service.env
     restart: unless-stopped
     volumes:
-      - ./logs:/app/logs
       - /tmp/videos:/tmp/videos
       - ./models:/mnt/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+              options:
+                mem_limit: "6g"
+
+  # Banknote detection stage — gates VLM so only videos with cash go to the VLM
+  banknote-detector-service:
+    profiles: ["vlm"]
+    image: be-banknote-detector-service:latest
+    container_name: security-banknote-detector-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    env_file:
+      - ./env/banknote-detector-service.env
+    restart: unless-stopped
+    volumes:
+      - /tmp/videos:/tmp/videos
+      - ./models:/mnt/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+              options:
+                mem_limit: "6g"
+
+  # VLM Classification Stage Service — used with banknote detection (STAGE_ORDER=banknote,vlm)
+  vlm-classification-service:
+    profiles: ["vlm"]
+    image: be-vlm-classification-service:latest
+    container_name: security-vlm-classification-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    env_file:
+      - ./env/vlm-classification-service.env
+    restart: unless-stopped
+    volumes:
+      - huggingface_cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+              options:
+                mem_limit: "6g"
 
   # Pipeline Service - Configurable two-stage video processing
   pipeline-service:
@@ -235,10 +302,8 @@ services:
       tracking-service:
         condition: service_started
     env_file:
-      - pipeline-service.env
+      - ./env/pipeline-service.env
     restart: unless-stopped
-    volumes:
-      - ./logs:/app/logs
 
   # Keycloak - Identity and Access Management
   keycloak:
@@ -246,7 +311,7 @@ services:
     container_name: security-keycloak
     command: start-dev --import-realm
     env_file:
-      - keycloak.env
+      - ./env/keycloak.env
     ports:
       - "8088:8080"
       - "9088:9000"
@@ -267,4 +332,4 @@ volumes:
   kafka_data:
   minio_data:
   redis_data:
-
+  huggingface_cache:

@@ -1,15 +1,14 @@
 import logging
-from typing import Any, Literal
+from typing import Any
 
 from minio import Minio
 from minio.commonconfig import Tags
 from minio.error import S3Error
 
+from common.kafka_messages import StageName
 from pipeline_settings import settings
 
 logger = logging.getLogger(__name__)
-
-StageName = Literal["classification", "tracking"]
 
 
 class MinioService:
@@ -128,13 +127,17 @@ class MinioService:
 
     @staticmethod
     def _stage_tags(stage_name: StageName, stage_result: dict[str, Any]) -> dict[str, str]:
-        if stage_name == "classification":
+        if stage_name == StageName.CLASSIFICATION:
             return MinioService._classification_tags(stage_result)
+        if stage_name == StageName.VLM:
+            return MinioService._vlm_tags(stage_result)
+        if stage_name == StageName.BANKNOTE:
+            return MinioService._banknote_tags(stage_result)
         return MinioService._tracking_tags(stage_result)
 
     @staticmethod
     def _classification_tags(classification_result: dict[str, Any]) -> dict[str, str]:
-        tags = {"classification": str(classification_result["event_type"])}
+        tags = {StageName.CLASSIFICATION: str(classification_result["event_type"])}
         confidence = classification_result.get("confidence")
         if confidence is not None:
             tags["classification_confidence"] = str(confidence)
@@ -145,7 +148,7 @@ class MinioService:
 
     @staticmethod
     def _tracking_tags(tracking_result: dict[str, Any]) -> dict[str, str]:
-        tags = {"tracking": str(tracking_result["event_type"])}
+        tags = {StageName.TRACKING: str(tracking_result["event_type"])}
         final_status = tracking_result.get("final_status")
         if final_status is not None:
             tags["tracking_final_status"] = str(final_status)
@@ -155,4 +158,16 @@ class MinioService:
         oks = tracking_result.get("oks")
         if oks is not None:
             tags["tracking_oks"] = str(oks)
+        return tags
+
+    @staticmethod
+    def _vlm_tags(vlm_result: dict[str, Any]) -> dict[str, str]:
+        return {StageName.VLM: str(vlm_result["event_type"])}
+
+    @staticmethod
+    def _banknote_tags(banknote_result: dict[str, Any]) -> dict[str, str]:
+        tags = {StageName.BANKNOTE: str(banknote_result["event_type"])}
+        detected = banknote_result.get("detected")
+        if detected is not None:
+            tags["banknote_detected"] = str(detected).lower()
         return tags

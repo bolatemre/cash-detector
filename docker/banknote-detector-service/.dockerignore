@@ -1,0 +1,16 @@
+# Logs
+logs/
+*.log
+
+# Models (mounted as volume)
+models/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Tests
+tests/
+test/
+.pytest_cache/

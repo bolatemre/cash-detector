@@ -1,0 +1,13 @@
+# torch 2.6.0+cu124, torchaudio 2.6.0+cu124, torchvision 0.21.0+cu124
+# come from pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
+torchcodec==0.2.0
+transformers==4.57.0
+accelerate==1.7.0
+qwen-vl-utils==0.0.14
+opencv-python-headless==5.0.0.93
+Pillow==12.3.0
+minio==7.2.0
+kafka-python==2.0.2
+confluent-kafka==2.3.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
